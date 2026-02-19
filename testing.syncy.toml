@@ -1,0 +1,31 @@
+[syncy]
+use = "rsync"
+source = "..."
+destination = "..."
+exclude = []
+exclude_from = []
+exclude_from_gitignore = false
+include = []
+include_from = []
+dry = true
+
+[syncy.backends.rsync]
+archive = false
+recursive = false
+links = false
+permissions = false
+times = false
+group = false
+owner = false
+devices = false
+specials = false
+verbose = false
+human_readable = false
+partial = false
+progress = false
+delete = "during"
+dry = true
+exclude = []
+include = []
+
+
