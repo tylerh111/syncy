@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 
 if sys.version_info < (3, 8):
-    raise Exception("error: python>=3.9 required.")
+    raise SyntaxError("python>=3.9 required")
 
 import argparse
 import itertools
@@ -17,6 +17,7 @@ import warnings
 from abc import ABC, abstractmethod
 from dataclasses import Field, dataclass, field, fields, MISSING
 from pathlib import Path
+from types import UnionType
 from typing import (
     Any,
     Callable,
@@ -31,6 +32,7 @@ from typing import (
     final,
     get_args,
     get_origin,
+    get_type_hints,
     overload,
 )
 
@@ -63,6 +65,19 @@ T = TypeVar("T")
 
 __all__ = [
     "syncy",
+]
+
+
+
+##==============================================================================
+## constants
+##==============================================================================
+
+
+SYNCY_SETTINGS_FILE: list[str] = [
+    ".syncy.toml",
+    # ".syncy.json",
+    # ".syncy.env",
 ]
 
 
@@ -129,52 +144,100 @@ def add_args_if(
     # usage `*add_args_if(...)`
     return args if expr else ()
 
-def check_setting(
+
+def type_check(
+    o: T,
+    field: str,
+    expected: type,
+):
+    t = type(o)
+    _expected_orig = get_origin(expected)
+    _expected_args = get_args(expected)
+
+    if _expected_orig is Literal and o not in _expected_args:
+        raise SyncyValidationError(
+            f"validation of field '{field}' failed: "
+            f"incorrect type: expected a '{expected}' (got '{t}')"
+        )
+    elif not isinstance(o, expected):
+        raise SyncyValidationError(
+            f"validation of field '{field}' failed: "
+            f"incorrect type: expected a '{expected}' (got '{t}')"
+        )
+
+
+def type_convert(
+    o: T,
+    field: str,
+    expected: type,
+) -> T:
+    try:
+        type_check(o, field, expected)
+        return o
+    except SyncyValidationError:
+        pass
+
+    try:
+        return expected(o)
+    except TypeError as e:
+        raise SyncyValidationError(
+            f"validation of field '{field}' failed: invalid convertion: "
+            f"tried to convert to '{expected}' (from '{o}')"
+        ) from e
+
+
+def validation_implementaion(
     o: T | Undefined,
     field: str,
     expected: type,
 ) -> T:
     if is_undefined(o):
         raise SyncyValidationError(
-            f"error: validation of field '{field}' failed: "
+            f"validation of field '{field}' failed: "
             f"value undefined: expected a '{expected}'"
         )
 
-    _expected_base = expected
+    _expected_base = (expected,)
     _expected_orig = get_origin(expected)
     _expected_args = get_args(expected)
+
+    print(expected, _expected_base, _expected_orig, _expected_args)
 
     if _expected_orig in (Sequence, list):
         _expected_base = Sequence
     elif _expected_orig in (Mapping, dict):
         _expected_base = Mapping
+    elif _expected_orig in (Union, UnionType):
+        _expected_base = _expected_args
 
-    def _check(_o: T, _expected: type):
-        t = type(_o)
-        if not isinstance(_o, _expected):
-            raise SyncyValidationError(
-                f"error: validation of field '{field}' failed: "
-                f"incorrect type: expected a '{_expected}' (got '{t}')"
-            )
 
     if _expected_base is Sequence:
-        _check(o, _expected_base)
-        for v in o:
-            _check(v, _expected_args[0])
+        type_check(o, field, _expected_base)
+        for i, v in enumerate(o):
+            o[i] = type_convert(v, f"{field}[{i}]", _expected_args[0])
     elif _expected_base is Mapping:
-        _check(o, _expected_base)
+        type_check(o, field, _expected_base)
         for k, v in o.items():
-            _check(k, _expected_args[0])
-            _check(v, _expected_args[1])
+            # not converting key
+            type_check(k, f"{field} (key)", _expected_args[0])
+            o[k] = type_convert(v, f"{field}[{k}]", _expected_args[1])
     else:
-        _check(o, _expected_base)
+        for t in _expected_base:
+            try:
+                o = type_convert(o, field, t)
+                break
+            except SyncyValidationError:
+                pass
+        type_check(o, field, _expected_base)
 
     return o
 
 
 def validate(inst: object, field: Field):
+    annotations = get_type_hints(inst)
+    field.type = annotations[field.name]
     value = getattr(inst, field.name)
-    value = check_setting(value, field.name, field.type)
+    value = validation_implementaion(value, field.name, field.type)
     setattr(inst, field.name, value)
 
 
@@ -198,23 +261,48 @@ class Backend(ABC):
         def arguments(cls, /, group: argparse.ArgumentParser):
             group.add_argument(f"--{cls.syncy_backend_name}-enabled")
             group.add_argument(f"--{cls.syncy_backend_name}-priority")
+            for field in fields(cls):
+                if field.name not in (
+                    "syncy_backend_name",
+                    "syncy_backend_enabled",
+                    "syncy_backend_priority",
+                ):
+                    name = field.name.replace("_", "-")
+                    group.add_argument(f"--{name}")
 
         def validate(self):
+            annotations = get_type_hints(self)
             for field in fields(self):
-                validate(self, field)
+                print(field.type in (TypeAlias,), field.type, type(field.type))
+                field.type = annotations[field.name]
+                print(field.type in (TypeAlias,), field.type, type(field.type))
+                # continue
+                if (
+                    field.name not in ("syncy_backend_name",) and
+                    field.type not in (TypeAlias,)
+                ):
+                    validate(self, field)
 
     def __init_subclass__(cls, /, *, backend: str, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        if not hasattr(cls, "Settings") or not issubclass(cls.Settings, Backend.Settings):
-            raise TypeError(f"cannot instantiate class {cls.__name__} without inner class `Settings`")
+        if not hasattr(cls, "Settings"):
+            raise TypeError(
+                f"cannot subclass backend {cls.__name__} without "
+                "inner class `Settings`"
+            )
+        if not issubclass(cls.Settings, Backend.Settings):
+            raise TypeError(
+                f"cannot subclass backend {cls.__name__} without "
+                f"inner class `Settings` inheriting `syncy.Backend.Settings"
+            )
 
         # track registered subclasses for construction
         cls.Settings.syncy_backend_name = backend
         _syncy_backend_registry[backend] = cls
 
     @classmethod
-    def lookup(cls, syncy_backend_name: str, /) -> type[Backend]:
+    def lookup(cls, syncy_backend_name: str, /) -> type["Backend"]:
         try:
             return _syncy_backend_registry[syncy_backend_name]
         except KeyError as e:
@@ -226,63 +314,64 @@ class Backend(ABC):
     #     pass
 
 
-SYNCY_SETTINGS_FILE: list[str] = [
-    ".syncy.toml",
-    # ".syncy.json",
-    # ".syncy.env",
-]
-
-
-@dataclass
-class Settings:
-    use                    : str | Undefined             = undefined
-    backends               : dict[str, Backend.Settings] = field(default_factory=dict)
-    source                 : Path | Undefined            = undefined
-    destination            : Path | Undefined            = undefined
-    exclude                : list[str]                   = field(default_factory=list)
-    exclude_from           : list[Path]                  = field(default_factory=list)
-    exclude_from_gitignore : bool                        = False
-    include                : list[str]                   = field(default_factory=list)
-    include_from           : list[Path]                  = field(default_factory=list)
-    dry                    : bool                        = False
-
-    @classmethod
-    def arguments(cls, /, group: argparse.ArgumentParser):
-        group.add_argument("-b", "--use")
-        group.add_argument("-o", "--destination")
-        group.add_argument("--exclude")
-        group.add_argument("--exclude-from")
-        group.add_argument("--exclude-from-gitignore")
-        group.add_argument("--include")
-        group.add_argument("--include-from")
-        group.add_argument("-r", "--dry")
-        group.add_argument("source")
-
-    def validate(self):
-        self.backends = {
-            name: Backend.lookup(name).Settings(**settings)
-            for name, settings in self.backends.items()
-        }
-
-        for field in fields(self):
-            if field in ("backends",):
-                continue
-            validate(self, field)
-
-        for backend in self.backends.values():
-            backend.validate()
-
-
 ##==============================================================================
 ## backends
 ##==============================================================================
+
+
+class SyncyBackendDefer(Backend, backend="general"):
+
+    @dataclass
+    class Settings(Backend.Settings):
+        use                    : str | Undefined             = undefined
+        backends               : dict[str, Backend.Settings] = field(default_factory=dict)
+        source                 : Path | Undefined            = undefined
+        destination            : Path | Undefined            = undefined
+        exclude                : list[str]                   = field(default_factory=list)
+        exclude_from           : list[Path]                  = field(default_factory=list)
+        exclude_from_gitignore : bool                        = False
+        include                : list[str]                   = field(default_factory=list)
+        include_from           : list[Path]                  = field(default_factory=list)
+        dry                    : bool                        = False
+
+        @classmethod
+        def arguments(cls, /, group: argparse.ArgumentParser):
+            group.add_argument("-b", "--use")
+            group.add_argument("-o", "--destination")
+            group.add_argument("--exclude")
+            group.add_argument("--exclude-from")
+            group.add_argument("--exclude-from-gitignore")
+            group.add_argument("--include")
+            group.add_argument("--include-from")
+            group.add_argument("-r", "--dry")
+            group.add_argument("source")
+
+        def validate(self):
+            annotations = get_type_hints(self)
+            self.backends = {
+                name: Backend.lookup(name).Settings(**settings)
+                for name, settings in self.backends.items()
+            }
+
+            for field in fields(self):
+                if field.name not in ("backends",):
+                    field.type = annotations[field.name]
+                    validate(self, field)
+
+            for backend in self.backends.values():
+                backend.validate()
+
+
+SyncyBackend = SyncyBackendDefer
+SyncySettings = SyncyBackendDefer.Settings
+
 
 class SyncyBackendRsync(Backend, backend="rsync"):
 
     @dataclass
     class Settings(Backend.Settings):
 
-        _DeleteType: TypeAlias = Literal["before"] | Literal["after"] | Literal["during"]
+        _DeleteType: TypeAlias = Literal["before", "after", "during"]
 
         archive        : bool               = True   # -a --archive (equivalent: -rlptgoD)
         recursive      : bool               = False  # -r --recursive
@@ -301,27 +390,6 @@ class SyncyBackendRsync(Backend, backend="rsync"):
         dry            : bool               = False  # -n --dry
         exclude        : list[str]          = field(default_factory=list)  # --exclude
         include        : list[str]          = field(default_factory=list)  # --include
-
-        @classmethod
-        def arguments(cls, /, group: argparse.ArgumentParser):
-            super().arguments(group)
-            group.add_argument("--rsync-archive")
-            group.add_argument("--rsync-recursive")
-            group.add_argument("--rsync-links")
-            group.add_argument("--rsync-permissions")
-            group.add_argument("--rsync-times")
-            group.add_argument("--rsync-group")
-            group.add_argument("--rsync-owner")
-            group.add_argument("--rsync-devices")
-            group.add_argument("--rsync-specials")
-            group.add_argument("--rsync-verbose")
-            group.add_argument("--rsync-human_readable")
-            group.add_argument("--rsync-partial")
-            group.add_argument("--rsync-progress")
-            group.add_argument("--rsync-delete")
-            group.add_argument("--rsync-dry")
-            group.add_argument("--rsync-exclude")
-            group.add_argument("--rsync-include")
 
     # @classmethod
     # def command(cls, syncy: SyncySettings, rsync: SyncyBackendRsync.Settings):
@@ -356,6 +424,7 @@ class SyncyBackendRsync(Backend, backend="rsync"):
 ##==============================================================================
 
 
+
 def syncy_default_args() -> list[str]:
     return [*sys.argv]
 
@@ -379,7 +448,7 @@ def syncy_default_file(
             path = path.parent
 
     if _raise:
-        raise FileNotFoundError(f"error: could not find config file (up to mount point {start})")
+        raise FileNotFoundError(f"could not find config file (up to mount point {start})")
 
     warnings.warn(f"could not find config file (up to mount point {start})")
     return None
@@ -387,7 +456,6 @@ def syncy_default_file(
 
 def _argument_parser():
     parser = argparse.ArgumentParser("syncy", exit_on_error=False)
-    Settings.arguments(parser.add_argument_group("general"))
     for name, backend in _syncy_backend_registry.items():
         backend.Settings.arguments(parser.add_argument_group(name))
 
@@ -454,7 +522,7 @@ def syncy_settings_underlying(
     argv: list[str] | None = None,
     envs: dict[str, str] | None = None,
     file: Path | None = None,
-) -> Settings:
+) -> SyncyBackendDefer.Settings:
     # defaults < env < file < args
     settings = {"syncy": {}}
 
@@ -477,10 +545,10 @@ def syncy_settings(
     argv: list[str] | None = None,
     envs: dict[str, str] | None = None,
     file: Path | None = None,
-) -> Settings:
+) -> SyncyBackendDefer.Settings:
     # defaults < env < file < args
     settings = syncy_settings_underlying(argv, envs, file)
-    settings = Settings(**settings["syncy"])
+    settings = SyncyBackendDefer.Settings(**settings["syncy"])
     if settings.use is None:
         raise SyncyError("no backend provided")
 
@@ -489,7 +557,7 @@ def syncy_settings(
     return settings
 
 
-def run(settings: Settings):
+def run(settings: SyncyBackendDefer.Settings):
     backend = Backend.lookup(settings.use)
 
     print(f"{settings=}")
