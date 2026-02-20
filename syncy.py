@@ -141,177 +141,156 @@ def default_to(o: Undefined | T, v: T) -> T:
 def add_args_if(
     expr: bool,
     *args: str,
-) -> Union[tuple[()], tuple[str, ...]]:
+) -> tuple[()] | tuple[str, ...]:
     # usage `*add_args_if(...)`
     return args if expr else ()
 
 
-def _type_check(o: object, t: type) -> bool:
-    return (
-        _type_check_none(o, t) or
-        _type_check_undefined(o, t) or
-        _type_check_union(o, t) or
-        _type_check_literal(o, t) or
-        _type_check_list(o, t) or
-        _type_check_dict(o, t) or
-        _type_check_regular(o, t)
-    )
+class _TypeChecker:
 
+    @staticmethod
+    def type_check(o: object, t: type) -> bool:
+        return (
+            _TypeChecker.type_check_none(o, t) or
+            _TypeChecker.type_check_undefined(o, t) or
+            _TypeChecker.type_check_union(o, t) or
+            _TypeChecker.type_check_literal(o, t) or
+            _TypeChecker.type_check_list(o, t) or
+            _TypeChecker.type_check_dict(o, t) or
+            _TypeChecker.type_check_regular(o, t)
+        )
 
-def _type_check_regular(o: object, t: type[type]) -> bool:
-    try:
-        return isinstance(o, t)
-    except TypeError:
-        return False
+    @staticmethod
+    def type_check_regular(o: object, t: type[type]) -> bool:
+        try:
+            return isinstance(o, t)
+        except TypeError:
+            return False
 
+    @staticmethod
+    def type_check_none(o: object, t: NoneType) -> bool:
+        return o is None
 
-def _type_check_none(o: object, t: NoneType) -> bool:
-    return o is None
+    @staticmethod
+    def type_check_undefined(o: object, _: Undefined) -> bool:
+        return isundefined(o)
 
+    @staticmethod
+    def type_check_union(o: object, t: type[UnionType]) -> bool:
+        args = get_args(t)
+        return any([_TypeChecker.type_check(o, u) for u in args])
 
-def _type_check_undefined(o: object, _: Undefined) -> bool:
-    return isundefined(o)
+    @staticmethod
+    def type_check_literal(o: object, t: type[Literal[0]]) -> bool:
+        args = get_args(t)
+        return o in args  # implicit equality
 
-def _type_check_union(o: object, t: type[UnionType]) -> bool:
-    args = get_args(t)
-    return any([_type_check(o, u) for u in args])
+    @staticmethod
+    def type_check_list(o: object, t: type[list[T]]) -> bool:
+        if not isinstance(o, list):
+            return False
 
+        args = get_args(t)
+        subtypesmatch = True
+        if args:
+            subtypesmatch = all([_TypeChecker.type_check(p, args[0]) for p in o])
 
-def _type_check_literal(o: object, t: type[Literal[0]]) -> bool:
-    args = get_args(t)
-    return o in args  # implicit equality
+        return subtypesmatch
 
+    @staticmethod
+    def type_check_dict(o: object, t: type[dict[T, U]]) -> bool:
+        if not isinstance(o, dict):
+            return False
 
-def _type_check_list(o: object, t: type[list[T]]) -> bool:
-    if not isinstance(o, list):
-        return False
+        args = get_args(t)
+        subtypesmatch = True
+        if args:
+            subtypesmatch &= all([_TypeChecker.type_check(p, args[0]) for p in o.keys()])
+            subtypesmatch &= all([_TypeChecker.type_check(p, args[0]) for p in o.values()])
 
-    args = get_args(t)
-    subtypesmatch = True
-    if args:
-        subtypesmatch = all([_type_check(p, args[0]) for p in o])
+        return subtypesmatch
 
-    return subtypesmatch
-
-
-def _type_check_dict(o: object, t: type[dict[T, U]]) -> bool:
-    if not isinstance(o, dict):
-        return False
-
-    args = get_args(t)
-    subtypesmatch = True
-    if args:
-        subtypesmatch &= all([_type_check(p, args[0]) for p in o.keys()])
-        subtypesmatch &= all([_type_check(p, args[0]) for p in o.values()])
-
-    return subtypesmatch
-
-
-def _type_coarse(o: object, t: type) -> bool:
-    if not isundefined(p := _type_coarse_union(o, t)):
-        return p
-    if not isundefined(p := _type_coarse_list(o, t)):
-        return p
-    if not isundefined(p := _type_coarse_dict(o, t)):
-        return p
-    if not isundefined(p := _type_coarse_regular(o, t)):
-        return p
-    return undefined
-
-
-def _type_coarse_regular(o: object, t: type[T]) -> T | Undefined:
-    if _type_check_regular(o, t):
-        return o
-    try:
-        return t(o)
-    except TypeError:
+    @staticmethod
+    def type_coarse(o: object, t: type) -> bool:
+        if not isundefined(p := _TypeChecker.type_coarse_union(o, t)):
+            return p
+        if not isundefined(p := _TypeChecker.type_coarse_list(o, t)):
+            return p
+        if not isundefined(p := _TypeChecker.type_coarse_dict(o, t)):
+            return p
+        if not isundefined(p := _TypeChecker.type_coarse_regular(o, t)):
+            return p
         return undefined
 
-
-def _type_coarse_union(o: object, t: type[UnionType]) -> T | Undefined:
-    if _type_check_union(o, t):
-        return o
-
-    args = get_args(t)
-    for u in args:
+    @staticmethod
+    def type_coarse_regular(o: object, t: type[T]) -> T | Undefined:
+        if _TypeChecker.type_check_regular(o, t):
+            return o
         try:
-            return _type_coarse(o, u)
+            return t(o)
         except TypeError:
-            pass
+            return undefined
 
-    return undefined
+    @staticmethod
+    def type_coarse_union(o: object, t: type[UnionType]) -> T | Undefined:
+        if _TypeChecker.type_check_union(o, t):
+            return o
 
+        args = get_args(t)
+        for u in args:
+            try:
+                return _TypeChecker.type_coarse(o, u)
+            except TypeError:
+                pass
 
-def _type_coarse_list(o: object, t: type[list[T]]) -> list[T] | Undefined:
-    if _type_check_list(o, t):
-        return o
+        return undefined
 
-    args = get_args(t)
-    if isinstance(o, list) and args:
-        return [_type_coarse(v, args[0]) for v in o]
+    @staticmethod
+    def type_coarse_list(o: object, t: type[list[T]]) -> list[T] | Undefined:
+        if _TypeChecker.type_check_list(o, t):
+            return o
 
-    return undefined
+        args = get_args(t)
+        if isinstance(o, list) and args:
+            return [_TypeChecker.type_coarse(v, args[0]) for v in o]
 
+        return undefined
 
-def _type_coarse_dict(o: object, t: type[dict[T, U]]) -> dict[T, U] | Undefined:
-    if _type_check_dict(o, t):
-        return o
+    @staticmethod
+    def type_coarse_dict(o: object, t: type[dict[T, U]]) -> dict[T, U] | Undefined:
+        if _TypeChecker.type_check_dict(o, t):
+            return o
 
-    args = get_args(t)
-    if isinstance(o, dict) and args:
-        return {
-            _type_coarse(k, args[1]):
-            _type_coarse(v, args[0]) for k, v in o.items()
+        args = get_args(t)
+        if isinstance(o, dict) and args:
+            return {
+                _TypeChecker.type_coarse(k, args[1]):
+                _TypeChecker.type_coarse(v, args[0]) for k, v in o.items()
+            }
+
+        return undefined
+
+    @staticmethod
+    def type_parse(tokens: str) -> type:
+
+        KNOWN_TYPES = {
+            "dict": dict,
+            "list": list,
+            "set": set,
+            "bool": bool,
+            "int": int,
+            "float": float,
+            "str": str,
+            "None": None,
+            "Undefined": Undefined,
+            "Literal": Literal,
+            "TypeAlias": Literal,
+            "Union": Union,
+            "Path": Path,
         }
 
-    return undefined
-
-
-def _type_parse_separator_tokens(
-    tokens: list[str],
-    sep: str,
-    prefix: str | None = None,
-) -> list[str]:
-    _tokens = []
-    for p in tokens:
-        if isinstance(p, list):
-            _tokens.append(_type_parse_separator_tokens(p, sep, prefix))
-            continue
-        if not sep in p:
-            _tokens.append(p)
-            continue
-        if prefix:
-            _tokens.append(prefix)
-        r = p
-        t = []
-        while p := r:
-            l, _, r = p.partition(sep)
-            t.append(l)
-        _tokens.append(t)
-
-    return _tokens
-
-
-def _type_parse(tokens: str) -> type:
-
-    KNOWN_TYPES = {
-        "dict": dict,
-        "list": list,
-        "set": set,
-        "bool": bool,
-        "int": int,
-        "float": float,
-        "str": str,
-        "None": None,
-        "Undefined": Undefined,
-        "Literal": Literal,
-        "TypeAlias": Literal,
-        "Union": Union,
-        "Path": Path,
-    }
-
-    t = eval(tokens, globals(), KNOWN_TYPES)
-    return t
+        t = eval(tokens, globals(), KNOWN_TYPES)
+        return t
 
 
 def type_check(
@@ -324,11 +303,9 @@ def type_check(
             f"validation of field '{field}' failed: "
             f"value undefined: expected a '{expected}'"
         )
-    # print(f"{str(type(expected)):<30} {expected!r:<30} {o!r:<20} {field!r:<20}")
     if isinstance(expected, str):
-        # print(f"{str(type(expected)):<30} {expected!r:<30} {o!r:<20} {field!r:<20}")
-        expected = _type_parse(expected)
-    if not _type_check(o, expected):
+        expected = _TypeChecker.type_parse(expected)
+    if not _TypeChecker.type_check(o, expected):
         t = type(o)
         raise SyncyValidationError(
             f"validation of field '{field}' failed: "
@@ -348,16 +325,13 @@ def type_coarsion(
             f"value undefined: expected a '{expected}'"
         )
     if isinstance(expected, str):
-        expected = _type_parse(expected)
+        expected = _TypeChecker.type_parse(expected)
     try:
-        # print(f"[try ] {str(type(expected)):<30} {expected!r:<30} {o!r:<20} {field!r:<20}")
         type_check(o, field, expected)
-        print(f"[good] {str(type(expected)):<30} {expected!r:<30} {o!r:<20} {field!r:<20}")
         return o
     except SyncyValidationError as e:
-        print(f"[fail] {str(type(expected)):<30} {expected!r:<30} {o!r:<20} {field!r:<20}")
         t = type(o)
-        p = _type_coarse(o, expected)
+        p = _TypeChecker.type_coarse(o, expected)
         if isundefined(p):
             raise SyncyValidationError(
                 f"validation of field '{field}' failed: invalid convertion: "
@@ -674,9 +648,7 @@ def syncy_settings(
     if settings.use is None:
         raise SyncyError("no backend provided")
 
-    print(settings.use)
     settings.validate()
-    print(settings.use)
 
     return settings
 
