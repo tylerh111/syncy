@@ -186,10 +186,6 @@ class Backend(ABC):
         except KeyError as e:
             raise SyncyBackendError(f"unknown syncy backend '{e}'") from None
 
-    @classmethod
-    def create(cls, syncy_backend_name: str, /, **kwargs) -> Backend:
-        return cls.lookup(syncy_backend_name)(**kwargs)
-
 
     # @abstractmethod
     # def run(self, settings: SyncySettings):
@@ -230,7 +226,7 @@ class Settings:
 
     def validate(self):
         self.backends = {
-            name: Backend.create(name, **settings)
+            name: Backend.lookup(name).Settings(**settings)
             for name, settings in self.backends.items()
         }
         self
@@ -362,6 +358,15 @@ def _argument_parser():
     return parser
 
 
+def syncy_parse_args(argv: list[str]) -> Mapping[str, Any]:
+    try:
+        parser = _argument_parser()
+        args = parser.parse_args(argv)
+        return vars(args)
+    except argparse.ArgumentError:
+        return {}
+
+
 def syncy_parse_envs(
     envs: Mapping[str, str],
     prefix: str = "syncy",
@@ -407,15 +412,6 @@ def syncy_parse_file(file: Path) -> Mapping[str, Any]:
         contents = syncy_parse_envs(contents)
 
     return contents
-
-
-def syncy_parse_args(argv: list[str]) -> Mapping[str, Any]:
-    try:
-        parser = _argument_parser()
-        args = parser.parse_args(argv)
-        return vars(args)
-    except argparse.ArgumentError:
-        return {}
 
 
 def syncy_settings_underlying(
