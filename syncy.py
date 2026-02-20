@@ -234,7 +234,7 @@ def validation_implementaion(
     return o
 
 
-def validate(inst: object, field: Field):
+def validatebad(inst: object, field: Field):
     # annotations = get_type_hints(inst)
     # field.type = annotations[field.name]
     value = getattr(inst, field.name)
@@ -403,8 +403,7 @@ def _type_parse(tokens: str) -> type:
     tokens = _type_parse_separator_tokens(tokens, ",")
     tokens = _type_parse_separator_tokens(tokens, "|", "Union")
 
-
-    KNOWN_TYPE = {
+    KNOWN_TYPES = {
         "dict": dict,
         "list": list,
         "set": set,
@@ -419,34 +418,62 @@ def _type_parse(tokens: str) -> type:
         "Path": Path,
     }
 
-
-
-
-    # token = iter(tokens)
-
-    # while t := next(token):
-
-
-    # for token in t:
-
+    return eval(tokens, KNOWN_TYPES)
 
 
 def type_check(
     o: object,
     field: str,
-    expected: str,
-) -> T:
-    pass
+    expected: str | type,
+) -> bool:
+    if isundefined(o):
+        raise SyncyValidationError(
+            f"validation of field '{field}' failed: "
+            f"value undefined: expected a '{expected}'"
+        )
+    if isinstance(expected, str):
+        expected = _type_parse(expected)
+    if _type_check(o, expected):
+        t = type(o)
+        raise SyncyValidationError(
+            f"validation of field '{field}' failed: "
+            f"incorrect type: expected a '{expected}' (got '{t}')"
+        )
+    return True
 
 
 def type_coarsion(
     o: object,
     field: str,
-    expected: str,
+    expected: str | type,
 ) -> T:
+    if isundefined(o):
+        raise SyncyValidationError(
+            f"validation of field '{field}' failed: "
+            f"value undefined: expected a '{expected}'"
+        )
+    if isinstance(expected, str):
+        expected = _type_parse(expected)
+    try:
+        type_check(o, field, expected)
+        return o
+    except SyncyValidationError as e:
+        t = type(o)
+        p = _type_coarse(o, expected)
+        if isundefined(p):
+            raise SyncyValidationError(
+                f"validation of field '{field}' failed: invalid convertion: "
+                f"tried to convert to '{expected}' (from '{t}')"
+            ) from e
 
 
-    pass
+
+
+def validate(inst: object, field: Field):
+    value = getattr(inst, field.name)
+    value = type_coarsion(value, field.name, field.type)
+    setattr(inst, field.name, value)
+
 
 
 ##==============================================================================
