@@ -15,7 +15,7 @@ import subprocess
 import sys
 import warnings
 from abc import ABC, abstractmethod
-from dataclasses import Field, dataclass, field, fields
+from dataclasses import Field, dataclass, field, fields, MISSING
 from pathlib import Path
 from typing import (
     Any,
@@ -23,6 +23,7 @@ from typing import (
     ClassVar,
     Literal,
     Mapping,
+    Protocol,
     Sequence,
     TypeVar,
     TypeAlias,
@@ -132,10 +133,12 @@ def check_setting(
     o: T | Undefined,
     field: str,
     expected: type,
-    default: T | Undefined = undefined,
 ) -> T:
-    if not is_undefined(default):
-        o = default_to(o, default)
+    if is_undefined(o):
+        raise SyncyValidationError(
+            f"error: validation of field '{field}' failed: "
+            f"value undefined: expected a '{expected}'"
+        )
 
     _expected_base = expected
     _expected_orig = get_origin(expected)
@@ -151,7 +154,7 @@ def check_setting(
         if not isinstance(_o, _expected):
             raise SyncyValidationError(
                 f"error: validation of field '{field}' failed: "
-                f"incorrect type: expected '{_expected}' (got '{t}')"
+                f"incorrect type: expected a '{_expected}' (got '{t}')"
             )
 
     if _expected_base is Sequence:
@@ -169,14 +172,10 @@ def check_setting(
     return o
 
 
-def validate(
-    o: T | Undefined,
-    field: str,
-    expected: type,
-    default: T | Undefined = undefined,
-):
-    value = getattr(o, field)
-    setattr(o, field, check_setting(value, field, expected, default))
+def validate(inst: object, field: Field):
+    value = getattr(inst, field.name)
+    value = check_setting(value, field.name, field.type)
+    setattr(inst, field.name, value)
 
 
 ##==============================================================================
@@ -201,9 +200,8 @@ class Backend(ABC):
             group.add_argument(f"--{cls.syncy_backend_name}-priority")
 
         def validate(self):
-            pass
-            # for field in fields(self):
-            #     validate(self, "", )
+            for field in fields(self):
+                validate(self, field)
 
     def __init_subclass__(cls, /, *, backend: str, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -267,17 +265,9 @@ class Settings:
         }
 
         for field in fields(self):
-            pass
-
-        validate(self, "use",                    str       )
-        validate(self, "source",                 Path      )
-        validate(self, "destination",            Path      )
-        validate(self, "exclude",                list[str] )
-        validate(self, "exclude_from",           list[Path])
-        validate(self, "exclude_from_gitignore", bool      )
-        validate(self, "include",                list[str] )
-        validate(self, "include_from",           list[Path])
-        validate(self, "dry",                    bool      )
+            if field in ("backends",):
+                continue
+            validate(self, field)
 
         for backend in self.backends.values():
             backend.validate()
@@ -332,9 +322,6 @@ class SyncyBackendRsync(Backend, backend="rsync"):
             group.add_argument("--rsync-dry")
             group.add_argument("--rsync-exclude")
             group.add_argument("--rsync-include")
-
-        def validate(self):
-            pass
 
     # @classmethod
     # def command(cls, syncy: SyncySettings, rsync: SyncyBackendRsync.Settings):
