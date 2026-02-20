@@ -146,132 +146,28 @@ def add_args_if(
     return args if expr else ()
 
 
-def type_check(
-    o: T,
-    field: str,
-    expected: type,
-):
-    t = type(o)
-    _expected_orig = get_origin(expected)
-    _expected_args = get_args(expected)
-
-    if _expected_orig is Literal and o not in _expected_args:
-        raise SyncyValidationError(
-            f"validation of field '{field}' failed: "
-            f"incorrect type: expected a '{expected}' (got '{t}')"
-        )
-    elif not isinstance(o, expected):
-        raise SyncyValidationError(
-            f"validation of field '{field}' failed: "
-            f"incorrect type: expected a '{expected}' (got '{t}')"
-        )
-
-
-def type_convert(
-    o: T,
-    field: str,
-    expected: type,
-) -> T:
-    try:
-        type_check(o, field, expected)
-        return o
-    except SyncyValidationError:
-        pass
-
-    try:
-        return expected(o)
-    except TypeError as e:
-        raise SyncyValidationError(
-            f"validation of field '{field}' failed: invalid convertion: "
-            f"tried to convert to '{expected}' (from '{o}')"
-        ) from e
-
-
-def validation_implementaion(
-    o: T | Undefined,
-    field: str,
-    expected: type,
-) -> T:
-    if isundefined(o):
-        raise SyncyValidationError(
-            f"validation of field '{field}' failed: "
-            f"value undefined: expected a '{expected}'"
-        )
-
-    _expected_base = (expected,)
-    _expected_orig = get_origin(expected)
-    _expected_args = get_args(expected)
-
-    print(type(expected), f"{expected!r}", _expected_base, _expected_orig, _expected_args)
-
-    if _expected_orig in (Sequence, list):
-        _expected_base = Sequence
-    elif _expected_orig in (Mapping, dict):
-        _expected_base = Mapping
-    elif _expected_orig in (Union, UnionType):
-        _expected_base = _expected_args
-
-
-    if _expected_base is Sequence:
-        type_check(o, field, _expected_base)
-        for i, v in enumerate(o):
-            o[i] = type_convert(v, f"{field}[{i}]", _expected_args[0])
-    elif _expected_base is Mapping:
-        type_check(o, field, _expected_base)
-        for k, v in o.items():
-            # not converting key
-            type_check(k, f"{field} (key)", _expected_args[0])
-            o[k] = type_convert(v, f"{field}[{k}]", _expected_args[1])
-    else:
-        for t in _expected_base:
-            try:
-                o = type_convert(o, field, t)
-                break
-            except SyncyValidationError:
-                pass
-        type_check(o, field, _expected_base)
-
-    return o
-
-
-def validatebad(inst: object, field: Field):
-    # annotations = get_type_hints(inst)
-    # field.type = annotations[field.name]
-    value = getattr(inst, field.name)
-    value = validation_implementaion(value, field.name, field.type)
-    setattr(inst, field.name, value)
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ======================================================
-
 def _type_check(o: object, t: type) -> bool:
     return (
-        _type_check_regular(o, t) or
         _type_check_none(o, t) or
         _type_check_undefined(o, t) or
         _type_check_union(o, t) or
         _type_check_literal(o, t) or
         _type_check_list(o, t) or
-        _type_check_dict(o, t)
+        _type_check_dict(o, t) or
+        _type_check_regular(o, t)
     )
 
 
 def _type_check_regular(o: object, t: type[type]) -> bool:
-    return isinstance(o, t)
+    try:
+        return isinstance(o, t)
+    except TypeError:
+        return False
+
 
 def _type_check_none(o: object, t: NoneType) -> bool:
     return o is None
+
 
 def _type_check_undefined(o: object, _: Undefined) -> bool:
     return isundefined(o)
@@ -280,30 +176,29 @@ def _type_check_union(o: object, t: type[UnionType]) -> bool:
     args = get_args(t)
     return any([_type_check(o, u) for u in args])
 
+
 def _type_check_literal(o: object, t: type[Literal[0]]) -> bool:
     args = get_args(t)
     return o in args  # implicit equality
 
-def _type_check_list(o: object, t: type[list[T]]) -> bool:
-    orig = get_origin(t)
-    args = get_args(t)
 
-    if not isinstance(o, orig):
+def _type_check_list(o: object, t: type[list[T]]) -> bool:
+    if not isinstance(o, list):
         return False
 
+    args = get_args(t)
     subtypesmatch = True
     if args:
         subtypesmatch = all([_type_check(p, args[0]) for p in o])
 
     return subtypesmatch
 
-def _type_check_dict(o: object, t: type[dict[T, U]]) -> bool:
-    orig = get_origin(t)
-    args = get_args(t)
 
-    if not isinstance(o, orig):
+def _type_check_dict(o: object, t: type[dict[T, U]]) -> bool:
+    if not isinstance(o, dict):
         return False
 
+    args = get_args(t)
     subtypesmatch = True
     if args:
         subtypesmatch &= all([_type_check(p, args[0]) for p in o.keys()])
@@ -313,13 +208,13 @@ def _type_check_dict(o: object, t: type[dict[T, U]]) -> bool:
 
 
 def _type_coarse(o: object, t: type) -> bool:
-    if not isundefined(p := _type_coarse_regular(o, t)):
-        return p
     if not isundefined(p := _type_coarse_union(o, t)):
         return p
     if not isundefined(p := _type_coarse_list(o, t)):
         return p
     if not isundefined(p := _type_coarse_dict(o, t)):
+        return p
+    if not isundefined(p := _type_coarse_regular(o, t)):
         return p
     return undefined
 
@@ -331,6 +226,7 @@ def _type_coarse_regular(o: object, t: type[T]) -> T | Undefined:
         return t(o)
     except TypeError:
         return undefined
+
 
 def _type_coarse_union(o: object, t: type[UnionType]) -> T | Undefined:
     if _type_check_union(o, t):
@@ -345,16 +241,17 @@ def _type_coarse_union(o: object, t: type[UnionType]) -> T | Undefined:
 
     return undefined
 
+
 def _type_coarse_list(o: object, t: type[list[T]]) -> list[T] | Undefined:
     if _type_check_list(o, t):
         return o
 
-    orig = get_origin(t)
     args = get_args(t)
-    if isinstance(o, orig) and args:
+    if isinstance(o, list) and args:
         return [_type_coarse(v, args[0]) for v in o]
 
     return undefined
+
 
 def _type_coarse_dict(o: object, t: type[dict[T, U]]) -> dict[T, U] | Undefined:
     if _type_check_dict(o, t):
@@ -368,7 +265,6 @@ def _type_coarse_dict(o: object, t: type[dict[T, U]]) -> dict[T, U] | Undefined:
         }
 
     return undefined
-
 
 
 def _type_parse_separator_tokens(
@@ -397,11 +293,6 @@ def _type_parse_separator_tokens(
 
 
 def _type_parse(tokens: str) -> type:
-    tokens = [tokens]
-    tokens = [r for r in itertools.chain.from_iterable(p.partition("[") for p in tokens) if r and r != "["]
-    tokens = [r for r in itertools.chain.from_iterable(p.partition("]") for p in tokens) if r and r != "]"]
-    tokens = _type_parse_separator_tokens(tokens, ",")
-    tokens = _type_parse_separator_tokens(tokens, "|", "Union")
 
     KNOWN_TYPES = {
         "dict": dict,
@@ -414,11 +305,13 @@ def _type_parse(tokens: str) -> type:
         "None": None,
         "Undefined": Undefined,
         "Literal": Literal,
+        "TypeAlias": Literal,
         "Union": Union,
         "Path": Path,
     }
 
-    return eval(tokens, KNOWN_TYPES)
+    t = eval(tokens, globals(), KNOWN_TYPES)
+    return t
 
 
 def type_check(
@@ -431,9 +324,11 @@ def type_check(
             f"validation of field '{field}' failed: "
             f"value undefined: expected a '{expected}'"
         )
+    # print(f"{str(type(expected)):<30} {expected!r:<30} {o!r:<20} {field!r:<20}")
     if isinstance(expected, str):
+        # print(f"{str(type(expected)):<30} {expected!r:<30} {o!r:<20} {field!r:<20}")
         expected = _type_parse(expected)
-    if _type_check(o, expected):
+    if not _type_check(o, expected):
         t = type(o)
         raise SyncyValidationError(
             f"validation of field '{field}' failed: "
@@ -455,9 +350,12 @@ def type_coarsion(
     if isinstance(expected, str):
         expected = _type_parse(expected)
     try:
+        # print(f"[try ] {str(type(expected)):<30} {expected!r:<30} {o!r:<20} {field!r:<20}")
         type_check(o, field, expected)
+        print(f"[good] {str(type(expected)):<30} {expected!r:<30} {o!r:<20} {field!r:<20}")
         return o
     except SyncyValidationError as e:
+        print(f"[fail] {str(type(expected)):<30} {expected!r:<30} {o!r:<20} {field!r:<20}")
         t = type(o)
         p = _type_coarse(o, expected)
         if isundefined(p):
@@ -465,8 +363,6 @@ def type_coarsion(
                 f"validation of field '{field}' failed: invalid convertion: "
                 f"tried to convert to '{expected}' (from '{t}')"
             ) from e
-
-
 
 
 def validate(inst: object, field: Field):
@@ -489,8 +385,8 @@ class Backend(ABC):
     @dataclass
     class Settings:
         syncy_backend_name     : ClassVar[str]
-        # syncy_backend_enabled  : bool          = True
-        # syncy_backend_priority : int           = 0
+        syncy_backend_enabled  : bool          = True
+        syncy_backend_priority : int           = 0
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
@@ -506,12 +402,7 @@ class Backend(ABC):
                     group.add_argument(f"--{name}")
 
         def validate(self):
-            # annotations = get_type_hints(self)
             for field in fields(self):
-                # print(field.type in (TypeAlias,), field.type, type(field.type))
-                # field.type = annotations[field.name]
-                # print(field.type in (TypeAlias,), field.type, type(field.type))
-                # continue
                 if (
                     field.name not in ("syncy_backend_name",) and
                     field.type not in (TypeAlias,)
@@ -582,7 +473,6 @@ class SyncyBackendDefer(Backend, backend="general"):
             group.add_argument("source")
 
         def validate(self):
-            # annotations = get_type_hints(self)
             self.backends = {
                 name: Backend.lookup(name).Settings(**settings)
                 for name, settings in self.backends.items()
@@ -590,7 +480,6 @@ class SyncyBackendDefer(Backend, backend="general"):
 
             for field in fields(self):
                 if field.name not in ("backends",):
-                    # field.type = annotations[field.name]
                     validate(self, field)
 
             for backend in self.backends.values():
@@ -600,14 +489,12 @@ class SyncyBackendDefer(Backend, backend="general"):
 SyncyBackend = SyncyBackendDefer
 SyncySettings = SyncyBackendDefer.Settings
 
+_DeleteType: TypeAlias = Literal["before", "after", "during"]
 
 class SyncyBackendRsync(Backend, backend="rsync"):
 
     @dataclass
     class Settings(Backend.Settings):
-
-        _DeleteType: TypeAlias = Literal["before", "after", "during"]
-
         archive        : bool               = True   # -a --archive (equivalent: -rlptgoD)
         recursive      : bool               = False  # -r --recursive
         links          : bool               = False  # -l --links
@@ -787,7 +674,9 @@ def syncy_settings(
     if settings.use is None:
         raise SyncyError("no backend provided")
 
+    print(settings.use)
     settings.validate()
+    print(settings.use)
 
     return settings
 
@@ -797,7 +686,6 @@ def run(settings: SyncyBackendDefer.Settings):
 
     print(f"{settings=}")
     print(f"{backend=}")
-    # print(f"{settings.remaining=}")
 
 
 def syncy(
