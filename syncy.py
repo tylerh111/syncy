@@ -15,7 +15,7 @@ import subprocess
 import sys
 import warnings
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, fields
+from dataclasses import Field, dataclass, field, fields
 from pathlib import Path
 from typing import (
     Any,
@@ -28,6 +28,8 @@ from typing import (
     TypeAlias,
     Union,
     final,
+    get_args,
+    get_origin,
     overload,
 )
 
@@ -126,23 +128,55 @@ def add_args_if(
     # usage `*add_args_if(...)`
     return args if expr else ()
 
-def check_type(
-    o: T,
+def check_setting(
+    o: T | Undefined,
     field: str,
     expected: type,
-    default: T | Undefined,
-    *,
-    _raise: bool = True,
+    default: T | Undefined = undefined,
 ) -> T:
-    t = type(o)
-    if not isinstance(o, expected):
-        if _raise:
+    if not is_undefined(default):
+        o = default_to(o, default)
+
+    _expected_base = expected
+    _expected_orig = get_origin(expected)
+    _expected_args = get_args(expected)
+
+    if _expected_orig in (Sequence, list):
+        _expected_base = Sequence
+    elif _expected_orig in (Mapping, dict):
+        _expected_base = Mapping
+
+    def _check(_o: T, _expected: type):
+        t = type(_o)
+        if not isinstance(_o, _expected):
             raise SyncyValidationError(
                 f"error: validation of field '{field}' failed: "
-                f"incorrect type: expected '{expected}' (got '{t}')"
+                f"incorrect type: expected '{_expected}' (got '{t}')"
             )
 
-    return isinstance()
+    if _expected_base is Sequence:
+        _check(o, _expected_base)
+        for v in o:
+            _check(v, _expected_args[0])
+    elif _expected_base is Mapping:
+        _check(o, _expected_base)
+        for k, v in o.items():
+            _check(k, _expected_args[0])
+            _check(v, _expected_args[1])
+    else:
+        _check(o, _expected_base)
+
+    return o
+
+
+def validate(
+    o: T | Undefined,
+    field: str,
+    expected: type,
+    default: T | Undefined = undefined,
+):
+    value = getattr(o, field)
+    setattr(o, field, check_setting(value, field, expected, default))
 
 
 ##==============================================================================
@@ -150,7 +184,7 @@ def check_type(
 ##==============================================================================
 
 
-_syncy_backend_registry: Mapping[str, "Backend"] = {}
+_syncy_backend_registry: dict[str, "Backend"] = {}
 
 
 class Backend(ABC):
@@ -168,6 +202,8 @@ class Backend(ABC):
 
         def validate(self):
             pass
+            # for field in fields(self):
+            #     validate(self, "", )
 
     def __init_subclass__(cls, /, *, backend: str, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -192,7 +228,7 @@ class Backend(ABC):
     #     pass
 
 
-SYNCY_SETTINGS_FILE: Sequence[str] = [
+SYNCY_SETTINGS_FILE: list[str] = [
     ".syncy.toml",
     # ".syncy.json",
     # ".syncy.env",
@@ -201,16 +237,16 @@ SYNCY_SETTINGS_FILE: Sequence[str] = [
 
 @dataclass
 class Settings:
-    use                    : str | Undefined                = undefined
-    backends               : Mapping[str, Backend.Settings] = field(default_factory=dict)
-    source                 : Path | Undefined               = undefined
-    destination            : Path | Undefined               = undefined
-    exclude                : Sequence[str]                  = field(default_factory=list)
-    exclude_from           : Sequence[Path]                 = field(default_factory=list)
-    exclude_from_gitignore : bool                           = False
-    include                : Sequence[str]                  = field(default_factory=list)
-    include_from           : Sequence[Path]                 = field(default_factory=list)
-    dry                    : bool                           = False
+    use                    : str | Undefined             = undefined
+    backends               : dict[str, Backend.Settings] = field(default_factory=dict)
+    source                 : Path | Undefined            = undefined
+    destination            : Path | Undefined            = undefined
+    exclude                : list[str]                   = field(default_factory=list)
+    exclude_from           : list[Path]                  = field(default_factory=list)
+    exclude_from_gitignore : bool                        = False
+    include                : list[str]                   = field(default_factory=list)
+    include_from           : list[Path]                  = field(default_factory=list)
+    dry                    : bool                        = False
 
     @classmethod
     def arguments(cls, /, group: argparse.ArgumentParser):
@@ -229,7 +265,20 @@ class Settings:
             name: Backend.lookup(name).Settings(**settings)
             for name, settings in self.backends.items()
         }
-        self
+
+        for field in fields(self):
+            pass
+
+        validate(self, "use",                    str       )
+        validate(self, "source",                 Path      )
+        validate(self, "destination",            Path      )
+        validate(self, "exclude",                list[str] )
+        validate(self, "exclude_from",           list[Path])
+        validate(self, "exclude_from_gitignore", bool      )
+        validate(self, "include",                list[str] )
+        validate(self, "include_from",           list[Path])
+        validate(self, "dry",                    bool      )
+
         for backend in self.backends.values():
             backend.validate()
 
@@ -260,8 +309,8 @@ class SyncyBackendRsync(Backend, backend="rsync"):
         progress       : bool               = True   # --progress
         delete         : _DeleteType | None = None   # --delete-{before, after, during}
         dry            : bool               = False  # -n --dry
-        exclude        : Sequence[str]      = field(default_factory=list)  # --exclude
-        include        : Sequence[str]      = field(default_factory=list)  # --include
+        exclude        : list[str]          = field(default_factory=list)  # --exclude
+        include        : list[str]          = field(default_factory=list)  # --include
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
@@ -320,11 +369,11 @@ class SyncyBackendRsync(Backend, backend="rsync"):
 ##==============================================================================
 
 
-def syncy_default_args() -> Sequence[str]:
+def syncy_default_args() -> list[str]:
     return [*sys.argv]
 
 
-def syncy_default_envs() -> Mapping[str, str]:
+def syncy_default_envs() -> dict[str, str]:
     return {**os.environ}
 
 
@@ -358,7 +407,7 @@ def _argument_parser():
     return parser
 
 
-def syncy_parse_args(argv: list[str]) -> Mapping[str, Any]:
+def syncy_parse_args(argv: list[str]) -> dict[str, Any]:
     try:
         parser = _argument_parser()
         args = parser.parse_args(argv)
@@ -368,9 +417,9 @@ def syncy_parse_args(argv: list[str]) -> Mapping[str, Any]:
 
 
 def syncy_parse_envs(
-    envs: Mapping[str, str],
+    envs: dict[str, str],
     prefix: str = "syncy",
-) -> Mapping[str, Any]:
+) -> dict[str, Any]:
     # env vars in the following form:
     # syncy__<field>
     # syncy__backend__<backend>__<field>
@@ -390,7 +439,7 @@ def syncy_parse_envs(
     return res
 
 
-def syncy_parse_file(file: Path) -> Mapping[str, Any]:
+def syncy_parse_file(file: Path) -> dict[str, Any]:
     if not isinstance(file, Path):
         file = Path(file)
 
@@ -415,8 +464,8 @@ def syncy_parse_file(file: Path) -> Mapping[str, Any]:
 
 
 def syncy_settings_underlying(
-    argv: Sequence[str] | None = None,
-    envs: Mapping[str, str] | None = None,
+    argv: list[str] | None = None,
+    envs: dict[str, str] | None = None,
     file: Path | None = None,
 ) -> Settings:
     # defaults < env < file < args
@@ -438,8 +487,8 @@ def syncy_settings_underlying(
 
 
 def syncy_settings(
-    argv: Sequence[str] | None = None,
-    envs: Mapping[str, str] | None = None,
+    argv: list[str] | None = None,
+    envs: dict[str, str] | None = None,
     file: Path | None = None,
 ) -> Settings:
     # defaults < env < file < args
@@ -462,8 +511,8 @@ def run(settings: Settings):
 
 
 def syncy(
-    argv: Sequence[str] | None = None,
-    envs: Mapping[str, str] | None = None,
+    argv: list[str] | None = None,
+    envs: dict[str, str] | None = None,
     file: Path | None = None,
 ):
     if argv is None:
