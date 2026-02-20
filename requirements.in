@@ -1,0 +1,28 @@
+
+# build
+build
+bumpver
+setuptools>=61
+setuptools-scm
+towncrier
+twine
+
+# docs
+mike
+mkdocs
+mkdocs-exclude
+mkdocs-material
+mkdocs-material-extensions
+mkdocs-minify-plugin
+mkdocs-redirects
+mkdocstrings
+mkdocstrings-python
+pygments
+pymdown-extensions
+
+# lint
+ruff
+
+# tests
+pytest
+pytest-cov

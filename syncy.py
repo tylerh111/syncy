@@ -5,7 +5,6 @@ from __future__ import annotations
 import sys
 
 if sys.version_info < (3, 8):
-    print(sys.version_info)
     raise Exception("error: python>=3.9 required.")
 
 import argparse
@@ -14,6 +13,7 @@ import logging
 import os
 import subprocess
 import sys
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -25,6 +25,7 @@ from typing import (
     Mapping,
     Sequence,
     TypeVar,
+    TypeAlias,
     Union,
     final,
     overload,
@@ -54,15 +55,33 @@ try:
 except ImportError:
     _HAVE_DOTENV = False
 
-
-__version__ = "0.0"
-
 T = TypeVar("T")
 
 
-##==============================================================
+__all__ = [
+    "syncy",
+]
+
+
+##==============================================================================
+## errors
+##==============================================================================
+
+class SyncyError(ValueError):
+    pass
+
+
+class SyncyBackendError(SyncyError):
+    pass
+
+
+class SyncyValidationError(SyncyError):
+    pass
+
+
+##==============================================================================
 ## utils
-##==============================================================
+##==============================================================================
 
 @final
 class Undefined:
@@ -96,39 +115,45 @@ def is_undefined(o: object, /) -> bool:
     return o is undefined
 
 
-def default_to(o: T, v: T) -> T:
+def default_to(o: Undefined | T, v: T) -> T:
     return v if is_undefined(o) else o
 
 
-def syncy_add_args_if(
+def add_args_if(
     expr: bool,
     *args: str,
 ) -> Union[tuple[()], tuple[str, ...]]:
-    # usage `*syncy_add_args_if(...)`
+    # usage `*add_args_if(...)`
     return args if expr else ()
 
+def check_type(
+    o: T,
+    field: str,
+    expected: type,
+    default: T | Undefined,
+    *,
+    _raise: bool = True,
+) -> T:
+    t = type(o)
+    if not isinstance(o, expected):
+        if _raise:
+            raise SyncyValidationError(
+                f"error: validation of field '{field}' failed: "
+                f"incorrect type: expected '{expected}' (got '{t}')"
+            )
 
-##==============================================================
-## errors
-##==============================================================
-
-class SyncyError(ValueError):
-    pass
-
-
-class SyncyBackendError(SyncyError):
-    pass
-
-
-##==============================================================
-## backends
-##==============================================================
-
-
-_syncy_backend_registry: Mapping[str, "SyncyBackend"] = {}
+    return isinstance()
 
 
-class SyncyBackend(ABC):
+##==============================================================================
+## interfaces
+##==============================================================================
+
+
+_syncy_backend_registry: Mapping[str, "Backend"] = {}
+
+
+class Backend(ABC):
 
     @dataclass
     class Settings:
@@ -141,52 +166,106 @@ class SyncyBackend(ABC):
             group.add_argument(f"--{cls.syncy_backend_name}-enabled")
             group.add_argument(f"--{cls.syncy_backend_name}-priority")
 
-
+        def validate(self):
+            pass
 
     def __init_subclass__(cls, /, *, backend: str, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        if not hasattr(cls, "Settings") or not issubclass(cls.Settings, SyncyBackend.Settings):
+        if not hasattr(cls, "Settings") or not issubclass(cls.Settings, Backend.Settings):
             raise TypeError(f"cannot instantiate class {cls.__name__} without inner class `Settings`")
 
         # track registered subclasses for construction
         cls.Settings.syncy_backend_name = backend
         _syncy_backend_registry[backend] = cls
 
+    @classmethod
+    def lookup(cls, syncy_backend_name: str, /) -> type[Backend]:
+        try:
+            return _syncy_backend_registry[syncy_backend_name]
+        except KeyError as e:
+            raise SyncyBackendError(f"unknown syncy backend '{e}'") from None
+
+    @classmethod
+    def create(cls, syncy_backend_name: str, /, **kwargs) -> Backend:
+        return cls.lookup(syncy_backend_name)(**kwargs)
+
+
     # @abstractmethod
     # def run(self, settings: SyncySettings):
     #     pass
 
 
-def syncy_backend(syncy_backend_name: str) -> type[SyncyBackend]:
-    try:
-        return _syncy_backend_registry[syncy_backend_name]
-    except KeyError as e:
-        raise SyncyBackendError(f"unknown syncy backend '{e}'") from None
+SYNCY_SETTINGS_FILE: Sequence[str] = [
+    ".syncy.toml",
+    # ".syncy.json",
+    # ".syncy.env",
+]
 
 
+@dataclass
+class Settings:
+    use                    : str | Undefined                = undefined
+    backends               : Mapping[str, Backend.Settings] = field(default_factory=dict)
+    source                 : Path | Undefined               = undefined
+    destination            : Path | Undefined               = undefined
+    exclude                : Sequence[str]                  = field(default_factory=list)
+    exclude_from           : Sequence[Path]                 = field(default_factory=list)
+    exclude_from_gitignore : bool                           = False
+    include                : Sequence[str]                  = field(default_factory=list)
+    include_from           : Sequence[Path]                 = field(default_factory=list)
+    dry                    : bool                           = False
 
-class SyncyBackendRsync(SyncyBackend, backend="rsync"):
+    @classmethod
+    def arguments(cls, /, group: argparse.ArgumentParser):
+        group.add_argument("-b", "--use")
+        group.add_argument("-o", "--destination")
+        group.add_argument("--exclude")
+        group.add_argument("--exclude-from")
+        group.add_argument("--exclude-from-gitignore")
+        group.add_argument("--include")
+        group.add_argument("--include-from")
+        group.add_argument("-r", "--dry")
+        group.add_argument("source")
+
+    def validate(self):
+        self.backends = {
+            name: Backend.create(name, **settings)
+            for name, settings in self.backends.items()
+        }
+        self
+        for backend in self.backends.values():
+            backend.validate()
+
+
+##==============================================================================
+## backends
+##==============================================================================
+
+class SyncyBackendRsync(Backend, backend="rsync"):
 
     @dataclass
-    class Settings(SyncyBackend.Settings):
-        archive        : bool          = True                         # -a --archive (equivalent: -rlptgoD)
-        recursive      : bool          = False                        # -r --recursive
-        links          : bool          = False                        # -l --links
-        permissions    : bool          = False                        # -p --permissions
-        times          : bool          = False                        # -t --times
-        group          : bool          = False                        # -g --group
-        owner          : bool          = False                        # -o --owner
-        devices        : bool          = False                        # --devices
-        specials       : bool          = False                        # --specials
-        verbose        : int           = 1                            # -v --verbose
-        human_readable : bool          = True                         # -h --human-readable
-        partial        : bool          = True                         # --partial
-        progress       : bool          = True                         # --progress
-        delete         : Literal["before"] | Literal["after"] | Literal["during"] | None = None  # --delete-before or --delete-after or --delete-during
-        dry            : bool          = False                        # -n --dry
-        exclude        : Sequence[str] = field(default_factory=list)  # --exclude
-        include        : Sequence[str] = field(default_factory=list)  # --include
+    class Settings(Backend.Settings):
+
+        _DeleteType: TypeAlias = Literal["before"] | Literal["after"] | Literal["during"]
+
+        archive        : bool               = True   # -a --archive (equivalent: -rlptgoD)
+        recursive      : bool               = False  # -r --recursive
+        links          : bool               = False  # -l --links
+        permissions    : bool               = False  # -p --permissions
+        times          : bool               = False  # -t --times
+        group          : bool               = False  # -g --group
+        owner          : bool               = False  # -o --owner
+        devices        : bool               = False  # --devices
+        specials       : bool               = False  # --specials
+        verbose        : int                = 1      # -v --verbose
+        human_readable : bool               = True   # -h --human-readable
+        partial        : bool               = True   # --partial
+        progress       : bool               = True   # --progress
+        delete         : _DeleteType | None = None   # --delete-{before, after, during}
+        dry            : bool               = False  # -n --dry
+        exclude        : Sequence[str]      = field(default_factory=list)  # --exclude
+        include        : Sequence[str]      = field(default_factory=list)  # --include
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
@@ -208,6 +287,9 @@ class SyncyBackendRsync(SyncyBackend, backend="rsync"):
             group.add_argument("--rsync-dry")
             group.add_argument("--rsync-exclude")
             group.add_argument("--rsync-include")
+
+        def validate(self):
+            pass
 
     # @classmethod
     # def command(cls, syncy: SyncySettings, rsync: SyncyBackendRsync.Settings):
@@ -237,47 +319,13 @@ class SyncyBackendRsync(SyncyBackend, backend="rsync"):
     # def run(self, settings: SyncySettings):
     #     cmd = self.command(settings)
 
-
-##==============================================================
-## settings
-##==============================================================
-
-SYNCY_SETTINGS_FILE: Sequence[str] = [
-    ".syncy.toml",
-    # ".syncy.json",
-    # ".syncy.env",
-]
-
-
-@dataclass
-class SyncySettings:
-    use                    : str | None                          = None
-    backends               : Mapping[str, SyncyBackend.Settings] = field(default_factory=dict)
-    source                 : Path | None                         = None
-    destination            : Path | None                         = None
-    exclude                : Sequence[str]                       = field(default_factory=list)
-    exclude_from           : Sequence[Path]                      = field(default_factory=list)
-    exclude_from_gitignore : bool                                = False
-    include                : Sequence[str]                       = field(default_factory=list)
-    include_from           : Sequence[Path]                      = field(default_factory=list)
-    dry                    : bool                                = False
-
-    @classmethod
-    def arguments(cls, /, group: argparse.ArgumentParser):
-        group.add_argument("-b", "--use")
-        group.add_argument("-o", "--destination")
-        group.add_argument("--exclude")
-        group.add_argument("--exclude-from")
-        group.add_argument("--exclude-from-gitignore")
-        group.add_argument("--include")
-        group.add_argument("--include-from")
-        group.add_argument("-r", "--dry")
-        group.add_argument("source")
-
+##==============================================================================
+## run
+##==============================================================================
 
 
 def syncy_default_args() -> Sequence[str]:
-    return {**sys.argv}
+    return [*sys.argv]
 
 
 def syncy_default_envs() -> Mapping[str, str]:
@@ -285,10 +333,10 @@ def syncy_default_envs() -> Mapping[str, str]:
 
 
 def syncy_default_file(
-    files: Sequence[Path],
     start: Path | None = None,
     _raise: bool = True,
 ) -> Path | None:
+    files = SYNCY_SETTINGS_FILE
     path = start if start is not None else Path.cwd()
     path = path.absolute()
     while path.parents:
@@ -299,13 +347,15 @@ def syncy_default_file(
             path = path.parent
 
     if _raise:
-        raise FileNotFoundError(f"could not find config file (up to mount point {start})")
+        raise FileNotFoundError(f"error: could not find config file (up to mount point {start})")
+
+    warnings.warn(f"could not find config file (up to mount point {start})")
     return None
 
 
 def _argument_parser():
     parser = argparse.ArgumentParser("syncy", exit_on_error=False)
-    SyncySettings.arguments(parser.add_argument_group("general"))
+    Settings.arguments(parser.add_argument_group("general"))
     for name, backend in _syncy_backend_registry.items():
         backend.Settings.arguments(parser.add_argument_group(name))
 
@@ -372,7 +422,7 @@ def syncy_settings_underlying(
     argv: Sequence[str] | None = None,
     envs: Mapping[str, str] | None = None,
     file: Path | None = None,
-) -> SyncySettings:
+) -> Settings:
     # defaults < env < file < args
     settings = {"syncy": {}}
 
@@ -395,19 +445,25 @@ def syncy_settings(
     argv: Sequence[str] | None = None,
     envs: Mapping[str, str] | None = None,
     file: Path | None = None,
-) -> SyncySettings:
+) -> Settings:
     # defaults < env < file < args
     settings = syncy_settings_underlying(argv, envs, file)
-    settings = SyncySettings(**settings["syncy"])
+    settings = Settings(**settings["syncy"])
     if settings.use is None:
         raise SyncyError("no backend provided")
+
+    settings.validate()
 
     return settings
 
 
-##==============================================================
-## run
-##==============================================================
+def run(settings: Settings):
+    backend = Backend.lookup(settings.use)
+
+    print(f"{settings=}")
+    print(f"{backend=}")
+    # print(f"{settings.remaining=}")
+
 
 def syncy(
     argv: Sequence[str] | None = None,
@@ -415,18 +471,15 @@ def syncy(
     file: Path | None = None,
 ):
     if argv is None:
-        argv = [*sys.argv]
+        argv = syncy_default_args()
     if envs is None:
-        envs = {**os.environ}
+        envs = syncy_default_envs()
     if file is None:
-        file = syncy_default_file(SYNCY_SETTINGS_FILE, _raise=False)
+        file = syncy_default_file(_raise=False)
 
     settings = syncy_settings(argv, envs, file)
-    backend = syncy_backend(settings.use)
 
-    print(f"{settings=}")
-    print(f"{backend=}")
-    # print(f"{settings.remaining=}")
+    run(settings)
 
 
 if __name__ == "__main__":
