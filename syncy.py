@@ -17,7 +17,7 @@ import warnings
 from abc import ABC, abstractmethod
 from dataclasses import Field, dataclass, field, fields, MISSING
 from pathlib import Path
-from types import UnionType
+from types import NoneType, UnionType
 from typing import (
     Any,
     Callable,
@@ -60,8 +60,6 @@ try:
 except ImportError:
     _HAVE_DOTENV = False
 
-T = TypeVar("T")
-
 
 __all__ = [
     "syncy",
@@ -72,6 +70,9 @@ __all__ = [
 ##==============================================================================
 ## constants
 ##==============================================================================
+
+T = TypeVar("T")
+U = TypeVar("U")
 
 
 SYNCY_SETTINGS_FILE: list[str] = [
@@ -129,12 +130,12 @@ class Undefined:
 undefined = Undefined()
 
 
-def is_undefined(o: object, /) -> bool:
+def isundefined(o: object, /) -> bool:
     return o is undefined
 
 
 def default_to(o: Undefined | T, v: T) -> T:
-    return v if is_undefined(o) else o
+    return v if isundefined(o) else o
 
 
 def add_args_if(
@@ -191,7 +192,7 @@ def validation_implementaion(
     field: str,
     expected: type,
 ) -> T:
-    if is_undefined(o):
+    if isundefined(o):
         raise SyncyValidationError(
             f"validation of field '{field}' failed: "
             f"value undefined: expected a '{expected}'"
@@ -201,7 +202,7 @@ def validation_implementaion(
     _expected_orig = get_origin(expected)
     _expected_args = get_args(expected)
 
-    print(expected, _expected_base, _expected_orig, _expected_args)
+    print(type(expected), f"{expected!r}", _expected_base, _expected_orig, _expected_args)
 
     if _expected_orig in (Sequence, list):
         _expected_base = Sequence
@@ -234,11 +235,218 @@ def validation_implementaion(
 
 
 def validate(inst: object, field: Field):
-    annotations = get_type_hints(inst)
-    field.type = annotations[field.name]
+    # annotations = get_type_hints(inst)
+    # field.type = annotations[field.name]
     value = getattr(inst, field.name)
     value = validation_implementaion(value, field.name, field.type)
     setattr(inst, field.name, value)
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ======================================================
+
+def _type_check(o: object, t: type) -> bool:
+    return (
+        _type_check_regular(o, t) or
+        _type_check_none(o, t) or
+        _type_check_undefined(o, t) or
+        _type_check_union(o, t) or
+        _type_check_literal(o, t) or
+        _type_check_list(o, t) or
+        _type_check_dict(o, t)
+    )
+
+
+def _type_check_regular(o: object, t: type[type]) -> bool:
+    return isinstance(o, t)
+
+def _type_check_none(o: object, t: NoneType) -> bool:
+    return o is None
+
+def _type_check_undefined(o: object, _: Undefined) -> bool:
+    return isundefined(o)
+
+def _type_check_union(o: object, t: type[UnionType]) -> bool:
+    args = get_args(t)
+    return any([_type_check(o, u) for u in args])
+
+def _type_check_literal(o: object, t: type[Literal[0]]) -> bool:
+    args = get_args(t)
+    return o in args  # implicit equality
+
+def _type_check_list(o: object, t: type[list[T]]) -> bool:
+    orig = get_origin(t)
+    args = get_args(t)
+
+    if not isinstance(o, orig):
+        return False
+
+    subtypesmatch = True
+    if args:
+        subtypesmatch = all([_type_check(p, args[0]) for p in o])
+
+    return subtypesmatch
+
+def _type_check_dict(o: object, t: type[dict[T, U]]) -> bool:
+    orig = get_origin(t)
+    args = get_args(t)
+
+    if not isinstance(o, orig):
+        return False
+
+    subtypesmatch = True
+    if args:
+        subtypesmatch &= all([_type_check(p, args[0]) for p in o.keys()])
+        subtypesmatch &= all([_type_check(p, args[0]) for p in o.values()])
+
+    return subtypesmatch
+
+
+def _type_coarse(o: object, t: type) -> bool:
+    if not isundefined(p := _type_coarse_regular(o, t)):
+        return p
+    if not isundefined(p := _type_coarse_union(o, t)):
+        return p
+    if not isundefined(p := _type_coarse_list(o, t)):
+        return p
+    if not isundefined(p := _type_coarse_dict(o, t)):
+        return p
+    return undefined
+
+
+def _type_coarse_regular(o: object, t: type[T]) -> T | Undefined:
+    if _type_check_regular(o, t):
+        return o
+    try:
+        return t(o)
+    except TypeError:
+        return undefined
+
+def _type_coarse_union(o: object, t: type[UnionType]) -> T | Undefined:
+    if _type_check_union(o, t):
+        return o
+
+    args = get_args(t)
+    for u in args:
+        try:
+            return _type_coarse(o, u)
+        except TypeError:
+            pass
+
+    return undefined
+
+def _type_coarse_list(o: object, t: type[list[T]]) -> list[T] | Undefined:
+    if _type_check_list(o, t):
+        return o
+
+    orig = get_origin(t)
+    args = get_args(t)
+    if isinstance(o, orig) and args:
+        return [_type_coarse(v, args[0]) for v in o]
+
+    return undefined
+
+def _type_coarse_dict(o: object, t: type[dict[T, U]]) -> dict[T, U] | Undefined:
+    if _type_check_dict(o, t):
+        return o
+
+    args = get_args(t)
+    if isinstance(o, dict) and args:
+        return {
+            _type_coarse(k, args[1]):
+            _type_coarse(v, args[0]) for k, v in o.items()
+        }
+
+    return undefined
+
+
+
+def _type_parse_separator_tokens(
+    tokens: list[str],
+    sep: str,
+    prefix: str | None = None,
+) -> list[str]:
+    _tokens = []
+    for p in tokens:
+        if isinstance(p, list):
+            _tokens.append(_type_parse_separator_tokens(p, sep, prefix))
+            continue
+        if not sep in p:
+            _tokens.append(p)
+            continue
+        if prefix:
+            _tokens.append(prefix)
+        r = p
+        t = []
+        while p := r:
+            l, _, r = p.partition(sep)
+            t.append(l)
+        _tokens.append(t)
+
+    return _tokens
+
+
+def _type_parse(tokens: str) -> type:
+    tokens = [tokens]
+    tokens = [r for r in itertools.chain.from_iterable(p.partition("[") for p in tokens) if r and r != "["]
+    tokens = [r for r in itertools.chain.from_iterable(p.partition("]") for p in tokens) if r and r != "]"]
+    tokens = _type_parse_separator_tokens(tokens, ",")
+    tokens = _type_parse_separator_tokens(tokens, "|", "Union")
+
+
+    KNOWN_TYPE = {
+        "dict": dict,
+        "list": list,
+        "set": set,
+        "bool": bool,
+        "int": int,
+        "float": float,
+        "str": str,
+        "None": None,
+        "Undefined": Undefined,
+        "Literal": Literal,
+        "Union": Union,
+        "Path": Path,
+    }
+
+
+
+
+    # token = iter(tokens)
+
+    # while t := next(token):
+
+
+    # for token in t:
+
+
+
+def type_check(
+    o: object,
+    field: str,
+    expected: str,
+) -> T:
+    pass
+
+
+def type_coarsion(
+    o: object,
+    field: str,
+    expected: str,
+) -> T:
+
+
+    pass
 
 
 ##==============================================================================
@@ -254,8 +462,8 @@ class Backend(ABC):
     @dataclass
     class Settings:
         syncy_backend_name     : ClassVar[str]
-        syncy_backend_enabled  : bool          = True
-        syncy_backend_priority : int           = 0
+        # syncy_backend_enabled  : bool          = True
+        # syncy_backend_priority : int           = 0
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
@@ -271,11 +479,11 @@ class Backend(ABC):
                     group.add_argument(f"--{name}")
 
         def validate(self):
-            annotations = get_type_hints(self)
+            # annotations = get_type_hints(self)
             for field in fields(self):
-                print(field.type in (TypeAlias,), field.type, type(field.type))
-                field.type = annotations[field.name]
-                print(field.type in (TypeAlias,), field.type, type(field.type))
+                # print(field.type in (TypeAlias,), field.type, type(field.type))
+                # field.type = annotations[field.name]
+                # print(field.type in (TypeAlias,), field.type, type(field.type))
                 # continue
                 if (
                     field.name not in ("syncy_backend_name",) and
@@ -347,7 +555,7 @@ class SyncyBackendDefer(Backend, backend="general"):
             group.add_argument("source")
 
         def validate(self):
-            annotations = get_type_hints(self)
+            # annotations = get_type_hints(self)
             self.backends = {
                 name: Backend.lookup(name).Settings(**settings)
                 for name, settings in self.backends.items()
@@ -355,7 +563,7 @@ class SyncyBackendDefer(Backend, backend="general"):
 
             for field in fields(self):
                 if field.name not in ("backends",):
-                    field.type = annotations[field.name]
+                    # field.type = annotations[field.name]
                     validate(self, field)
 
             for backend in self.backends.values():
