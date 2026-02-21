@@ -65,7 +65,7 @@ push = false
 ]
 "syncy.py" = [
     '__date__ = "YYYY-0M-0D"',
-    '__license__ = "Copyright (c) 2025-YYYY Tyler Hughes"',
+    '__copyright__ = "Copyright (c) 2025-YYYY Tyler Hughes"',
     '__version__ = "{version}"',
 ]
 

@@ -27,10 +27,11 @@ from __future__ import annotations
 # __name__ = "syncy"
 # __doc__ = "Sync Workspaces!"
 __version__ = "0.0"
-__date__ = "2026-02-21"
+__date__ = "2026-02-20"
 __author__ = "Tyler Hughes"
 __license__ = "MIT"
 __copyright__ = "Copyright (c) 2025-2026 Tyler Hughes"
+__all__ = ["syncy"]
 
 
 import sys
@@ -87,11 +88,6 @@ try:
     _HAVE_DOTENV = True
 except ImportError:
     _HAVE_DOTENV = False
-
-
-__all__ = [
-    "syncy",
-]
 
 
 ##==============================================================================
