@@ -66,7 +66,6 @@ __all__ = [
 ]
 
 
-
 ##==============================================================================
 ## constants
 ##==============================================================================
@@ -146,18 +145,18 @@ def add_args_if(
     return args if expr else ()
 
 
-class _TypeChecker:
+class _TypeHandler:
 
     @staticmethod
     def type_check(o: object, t: type) -> bool:
         return (
-            _TypeChecker.type_check_none(o, t) or
-            _TypeChecker.type_check_undefined(o, t) or
-            _TypeChecker.type_check_union(o, t) or
-            _TypeChecker.type_check_literal(o, t) or
-            _TypeChecker.type_check_list(o, t) or
-            _TypeChecker.type_check_dict(o, t) or
-            _TypeChecker.type_check_regular(o, t)
+            _TypeHandler.type_check_none(o, t) or
+            _TypeHandler.type_check_undefined(o, t) or
+            _TypeHandler.type_check_union(o, t) or
+            _TypeHandler.type_check_literal(o, t) or
+            _TypeHandler.type_check_list(o, t) or
+            _TypeHandler.type_check_dict(o, t) or
+            _TypeHandler.type_check_regular(o, t)
         )
 
     @staticmethod
@@ -168,7 +167,7 @@ class _TypeChecker:
             return False
 
     @staticmethod
-    def type_check_none(o: object, t: NoneType) -> bool:
+    def type_check_none(o: object, _: NoneType) -> bool:
         return o is None
 
     @staticmethod
@@ -178,7 +177,7 @@ class _TypeChecker:
     @staticmethod
     def type_check_union(o: object, t: type[UnionType]) -> bool:
         args = get_args(t)
-        return any([_TypeChecker.type_check(o, u) for u in args])
+        return any([_TypeHandler.type_check(o, u) for u in args])
 
     @staticmethod
     def type_check_literal(o: object, t: type[Literal[0]]) -> bool:
@@ -193,7 +192,7 @@ class _TypeChecker:
         args = get_args(t)
         subtypesmatch = True
         if args:
-            subtypesmatch = all([_TypeChecker.type_check(p, args[0]) for p in o])
+            subtypesmatch = all([_TypeHandler.type_check(p, args[0]) for p in o])
 
         return subtypesmatch
 
@@ -205,26 +204,26 @@ class _TypeChecker:
         args = get_args(t)
         subtypesmatch = True
         if args:
-            subtypesmatch &= all([_TypeChecker.type_check(p, args[0]) for p in o.keys()])
-            subtypesmatch &= all([_TypeChecker.type_check(p, args[0]) for p in o.values()])
+            subtypesmatch &= all([_TypeHandler.type_check(p, args[0]) for p in o.keys()])
+            subtypesmatch &= all([_TypeHandler.type_check(p, args[0]) for p in o.values()])
 
         return subtypesmatch
 
     @staticmethod
-    def type_coarse(o: object, t: type) -> bool:
-        if not isundefined(p := _TypeChecker.type_coarse_union(o, t)):
+    def type_cast(o: object, t: type) -> bool:
+        if not isundefined(p := _TypeHandler.type_cast_union(o, t)):
             return p
-        if not isundefined(p := _TypeChecker.type_coarse_list(o, t)):
+        if not isundefined(p := _TypeHandler.type_cast_list(o, t)):
             return p
-        if not isundefined(p := _TypeChecker.type_coarse_dict(o, t)):
+        if not isundefined(p := _TypeHandler.type_cast_dict(o, t)):
             return p
-        if not isundefined(p := _TypeChecker.type_coarse_regular(o, t)):
+        if not isundefined(p := _TypeHandler.type_cast_regular(o, t)):
             return p
         return undefined
 
     @staticmethod
-    def type_coarse_regular(o: object, t: type[T]) -> T | Undefined:
-        if _TypeChecker.type_check_regular(o, t):
+    def type_cast_regular(o: object, t: type[T]) -> T | Undefined:
+        if _TypeHandler.type_check_regular(o, t):
             return o
         try:
             return t(o)
@@ -232,46 +231,46 @@ class _TypeChecker:
             return undefined
 
     @staticmethod
-    def type_coarse_union(o: object, t: type[UnionType]) -> T | Undefined:
-        if _TypeChecker.type_check_union(o, t):
+    def type_cast_union(o: object, t: type[UnionType]) -> T | Undefined:
+        if _TypeHandler.type_check_union(o, t):
             return o
 
         args = get_args(t)
         for u in args:
             try:
-                return _TypeChecker.type_coarse(o, u)
+                return _TypeHandler.type_cast(o, u)
             except TypeError:
                 pass
 
         return undefined
 
     @staticmethod
-    def type_coarse_list(o: object, t: type[list[T]]) -> list[T] | Undefined:
-        if _TypeChecker.type_check_list(o, t):
+    def type_cast_list(o: object, t: type[list[T]]) -> list[T] | Undefined:
+        if _TypeHandler.type_check_list(o, t):
             return o
 
         args = get_args(t)
         if isinstance(o, list) and args:
-            return [_TypeChecker.type_coarse(v, args[0]) for v in o]
+            return [_TypeHandler.type_cast(v, args[0]) for v in o]
 
         return undefined
 
     @staticmethod
-    def type_coarse_dict(o: object, t: type[dict[T, U]]) -> dict[T, U] | Undefined:
-        if _TypeChecker.type_check_dict(o, t):
+    def type_cast_dict(o: object, t: type[dict[T, U]]) -> dict[T, U] | Undefined:
+        if _TypeHandler.type_check_dict(o, t):
             return o
 
         args = get_args(t)
         if isinstance(o, dict) and args:
             return {
-                _TypeChecker.type_coarse(k, args[1]):
-                _TypeChecker.type_coarse(v, args[0]) for k, v in o.items()
+                _TypeHandler.type_cast(k, args[1]):
+                _TypeHandler.type_cast(v, args[0]) for k, v in o.items()
             }
 
         return undefined
 
     @staticmethod
-    def type_parse(tokens: str) -> type:
+    def type_parse(typestr: str) -> type:
 
         KNOWN_TYPES = {
             "dict": dict,
@@ -289,8 +288,10 @@ class _TypeChecker:
             "Path": Path,
         }
 
-        t = eval(tokens, globals(), KNOWN_TYPES)
-        return t
+        # Evil eval used to parse the type string into a type. Libraries could
+        # be used to properly parse, check, and coarse the type, but with only
+        # using built-in python functions, this is the simplest way to do it.
+        return eval(typestr, globals(), KNOWN_TYPES)
 
 
 def type_check(
@@ -298,15 +299,21 @@ def type_check(
     field: str,
     expected: str | type,
 ) -> bool:
+    t = type(o)
+    if isinstance(expected, str):
+        _expected = _TypeHandler.type_parse(expected)
+    else:
+        _expected = expected
+    if isundefined(_expected):
+        raise TypeError(
+            f"unknown type {expected!r}"
+        )
     if isundefined(o):
         raise SyncyValidationError(
             f"validation of field '{field}' failed: "
-            f"value undefined: expected a '{expected}'"
+            f"value undefined: expected a '{expected}' (got '{t}')"
         )
-    if isinstance(expected, str):
-        expected = _TypeChecker.type_parse(expected)
-    if not _TypeChecker.type_check(o, expected):
-        t = type(o)
+    if not _TypeHandler.type_check(o, _expected):
         raise SyncyValidationError(
             f"validation of field '{field}' failed: "
             f"incorrect type: expected a '{expected}' (got '{t}')"
@@ -314,24 +321,30 @@ def type_check(
     return True
 
 
-def type_coarsion(
+def type_cast(
     o: object,
     field: str,
     expected: str | type,
 ) -> T:
+    t = type(o)
+    if isinstance(expected, str):
+        _expected = _TypeHandler.type_parse(expected)
+    else:
+        _expected = expected
+    if isundefined(_expected):
+        raise TypeError(
+            f"unknown type {expected!r}"
+        )
     if isundefined(o):
         raise SyncyValidationError(
             f"validation of field '{field}' failed: "
-            f"value undefined: expected a '{expected}'"
+            f"value undefined: expected a '{expected}' (got '{t}')"
         )
-    if isinstance(expected, str):
-        expected = _TypeChecker.type_parse(expected)
     try:
-        type_check(o, field, expected)
+        type_check(o, field, _expected)
         return o
     except SyncyValidationError as e:
-        t = type(o)
-        p = _TypeChecker.type_coarse(o, expected)
+        p = _TypeHandler.type_cast(o, _expected)
         if isundefined(p):
             raise SyncyValidationError(
                 f"validation of field '{field}' failed: invalid convertion: "
@@ -341,7 +354,7 @@ def type_coarsion(
 
 def validate(inst: object, field: Field):
     value = getattr(inst, field.name)
-    value = type_coarsion(value, field.name, field.type)
+    value = type_cast(value, field.name, field.type)
     setattr(inst, field.name, value)
 
 
