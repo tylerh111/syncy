@@ -70,6 +70,7 @@ __all__ = [
 ## constants
 ##==============================================================================
 
+
 T = TypeVar("T")
 U = TypeVar("U")
 
@@ -84,6 +85,7 @@ SYNCY_SETTINGS_FILE: list[str] = [
 ##==============================================================================
 ## errors
 ##==============================================================================
+
 
 class SyncyError(ValueError):
     pass
@@ -100,6 +102,7 @@ class SyncyValidationError(SyncyError):
 ##==============================================================================
 ## utils
 ##==============================================================================
+
 
 @final
 class Undefined:
@@ -291,6 +294,9 @@ class _TypeHandler:
         # Evil eval used to parse the type string into a type. Libraries could
         # be used to properly parse, check, and coarse the type, but with only
         # using built-in python functions, this is the simplest way to do it.
+        # This required due to all annotations being saved as string caused by
+        # `from __future__ import annotations`. Removing that would remove the
+        # need for this function. However, that may cause other issues elsewhere.
         return eval(typestr, globals(), KNOWN_TYPES)
 
 
@@ -358,7 +364,6 @@ def validate(inst: object, field: Field):
     setattr(inst, field.name, value)
 
 
-
 ##==============================================================================
 ## interfaces
 ##==============================================================================
@@ -369,9 +374,11 @@ _syncy_backend_registry: dict[str, "Backend"] = {}
 
 class Backend(ABC):
 
+    syncy_backend_name: ClassVar[str]
+
     @dataclass
     class Settings:
-        syncy_backend_name     : ClassVar[str]
+        syncy_backend_name: ClassVar[str]
         syncy_backend_enabled  : bool          = True
         syncy_backend_priority : int           = 0
 
@@ -386,7 +393,7 @@ class Backend(ABC):
                     "syncy_backend_priority",
                 ):
                     name = field.name.replace("_", "-")
-                    group.add_argument(f"--{name}")
+                    group.add_argument(f"--{cls.syncy_backend_name}-{name}")
 
         def validate(self):
             for field in fields(self):
@@ -411,6 +418,7 @@ class Backend(ABC):
             )
 
         # track registered subclasses for construction
+        cls.syncy_backend_name = backend
         cls.Settings.syncy_backend_name = backend
         _syncy_backend_registry[backend] = cls
 
@@ -421,10 +429,34 @@ class Backend(ABC):
         except KeyError as e:
             raise SyncyBackendError(f"unknown syncy backend '{e}'") from None
 
+    @classmethod
+    @abstractmethod
+    def command(
+        self,
+        settings: SyncySettings,
+        settings_backend: Backend.Settings,
+    ) -> list[str]:
+        pass
 
-    # @abstractmethod
-    # def run(self, settings: SyncySettings):
-    #     pass
+    @classmethod
+    def run(cls, settings: SyncySettings) -> subprocess.CompletedProcess[str]:
+        settings_backend = settings.backends.get(
+            cls.syncy_backend_name,
+            cls.Settings(),
+        )
+        cmd = cls.command(settings, settings_backend)
+        cont = input(
+            "about to run the following command:\n"
+            f"\t$ {"\\\n\t\t".join(cmd)}\n"
+            "continue [y/N]? ",
+        )
+
+        if cont.lower().startswith("y"):
+            print("continuing")
+        else:
+            print("exiting")
+
+        # return subprocess.run(cmd)
 
 
 ##==============================================================================
@@ -476,62 +508,64 @@ class SyncyBackendDefer(Backend, backend="general"):
 SyncyBackend = SyncyBackendDefer
 SyncySettings = SyncyBackendDefer.Settings
 
-_DeleteType: TypeAlias = Literal["before", "after", "during"]
 
+_RsyncDeleteType: TypeAlias = Literal["before", "after", "during"]
 class SyncyBackendRsync(Backend, backend="rsync"):
 
     @dataclass
     class Settings(Backend.Settings):
-        archive        : bool               = True   # -a --archive (equivalent: -rlptgoD)
-        recursive      : bool               = False  # -r --recursive
-        links          : bool               = False  # -l --links
-        permissions    : bool               = False  # -p --permissions
-        times          : bool               = False  # -t --times
-        group          : bool               = False  # -g --group
-        owner          : bool               = False  # -o --owner
-        devices        : bool               = False  # --devices
-        specials       : bool               = False  # --specials
-        verbose        : int                = 1      # -v --verbose
-        human_readable : bool               = True   # -h --human-readable
-        partial        : bool               = True   # --partial
-        progress       : bool               = True   # --progress
-        delete         : _DeleteType | None = None   # --delete-{before, after, during}
-        dry            : bool               = False  # -n --dry
-        exclude        : list[str]          = field(default_factory=list)  # --exclude
-        include        : list[str]          = field(default_factory=list)  # --include
 
-    # @classmethod
-    # def command(cls, syncy: SyncySettings, rsync: SyncyBackendRsync.Settings):
-    #     return [
-    #         "rsync",
-    #         *syncy_add_args_if(rsync.archive,                   "--archive"               ),
-    #         *syncy_add_args_if(rsync.recursive,                 "--recursive"             ),
-    #         *syncy_add_args_if(rsync.links,                     "--links"                 ),
-    #         *syncy_add_args_if(rsync.permissions,               "--permissions"           ),
-    #         *syncy_add_args_if(rsync.times,                     "--times"                 ),
-    #         *syncy_add_args_if(rsync.group,                     "--group"                 ),
-    #         *syncy_add_args_if(rsync.owner,                     "--owner"                 ),
-    #         *syncy_add_args_if(rsync.devices,                   "--devices"               ),
-    #         *syncy_add_args_if(rsync.specials,                  "--specials"              ),
-    #         *syncy_add_args_if(rsync.verbose,                   f"-{'v' * rsync.verbose}" ),
-    #         *syncy_add_args_if(rsync.human_readable,            "--human-readable"        ),
-    #         *syncy_add_args_if(rsync.partial,                   "--partial"               ),
-    #         *syncy_add_args_if(rsync.progress,                  "--progress"              ),
-    #         *syncy_add_args_if(rsync.delete,                    f"--delete-{rsync.delete}"),
-    #         *syncy_add_args_if(rsync.dry or syncy.dry,          "--dry"                   ),
-    #         *syncy_add_args_if(rsync.exclude or syncy.exclude,  [f"--exclude={pattern}" for pattern in itertools.chain(rsync.exclude, syncy.exclude)]),
-    #         *syncy_add_args_if(rsync.include or syncy.exclude,  [f"--include={pattern}" for pattern in itertools.chain(rsync.include, syncy.include)]),
-    #         syncy.source,
-    #         syncy.destination,
-    #     ]  # fmt: skip
+        archive        : bool                     = True   # -a --archive (equivalent: -rlptgoD)
+        recursive      : bool                     = False  # -r --recursive
+        links          : bool                     = False  # -l --links
+        permissions    : bool                     = False  # -p --permissions
+        times          : bool                     = False  # -t --times
+        group          : bool                     = False  # -g --group
+        owner          : bool                     = False  # -o --owner
+        devices        : bool                     = False  # --devices
+        specials       : bool                     = False  # --specials
+        verbose        : int                      = 1      # -v --verbose
+        human_readable : bool                     = True   # -h --human-readable
+        partial        : bool                     = True   # --partial
+        progress       : bool                     = True   # --progress
+        delete         : _RsyncDeleteType | None  = None   # --delete-{before, after, during}
+        dry            : bool                     = False  # -n --dry
+        exclude        : list[str]                = field(default_factory=list)  # --exclude
+        include        : list[str]                = field(default_factory=list)  # --include
 
-    # def run(self, settings: SyncySettings):
-    #     cmd = self.command(settings)
+    @classmethod
+    def command(cls, syncy: SyncySettings, rsync: SyncyBackendRsync.Settings) -> list[str]:
+        return [
+            "rsync",
+            *add_args_if(rsync.archive,          "--archive"               ),
+            *add_args_if(rsync.recursive,        "--recursive"             ),
+            *add_args_if(rsync.links,            "--links"                 ),
+            *add_args_if(rsync.permissions,      "--permissions"           ),
+            *add_args_if(rsync.times,            "--times"                 ),
+            *add_args_if(rsync.group,            "--group"                 ),
+            *add_args_if(rsync.owner,            "--owner"                 ),
+            *add_args_if(rsync.devices,          "--devices"               ),
+            *add_args_if(rsync.specials,         "--specials"              ),
+            *add_args_if(rsync.verbose,          f"-{'v' * rsync.verbose}" ),
+            *add_args_if(rsync.human_readable,   "--human-readable"        ),
+            *add_args_if(rsync.partial,          "--partial"               ),
+            *add_args_if(rsync.progress,         "--progress"              ),
+            *add_args_if(rsync.delete,           f"--delete-{rsync.delete}"),
+            *add_args_if(rsync.dry or syncy.dry, "--dry"                   ),
+            # *add_args_if(rsync.exclude or syncy.exclude, [
+            #     f"--exclude={pattern}" for pattern in itertools.chain(rsync.exclude, syncy.exclude)
+            # ]),
+            # *add_args_if(rsync.include or syncy.exclude, [
+            #     f"--include={pattern}" for pattern in itertools.chain(rsync.include, syncy.include)
+            # ]),
+            syncy.source,
+            syncy.destination,
+        ]  # fmt: skip
+
 
 ##==============================================================================
 ## run
 ##==============================================================================
-
 
 
 def syncy_default_args() -> list[str]:
@@ -564,7 +598,12 @@ def syncy_default_file(
 
 
 def _argument_parser():
-    parser = argparse.ArgumentParser("syncy", exit_on_error=False)
+    parser = argparse.ArgumentParser(
+        "syncy",
+        add_help=True,
+        exit_on_error=False,
+        usage="%(prog)s [-h] [-b backend] [-r] source [destination ...]",
+    )
     for name, backend in _syncy_backend_registry.items():
         backend.Settings.arguments(parser.add_argument_group(name))
 
@@ -668,6 +707,7 @@ def syncy_settings(
 
 def run(settings: SyncyBackendDefer.Settings):
     backend = Backend.lookup(settings.use)
+    # backend.run(settings)
 
     print(f"{settings=}")
     print(f"{backend=}")
