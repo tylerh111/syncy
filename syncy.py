@@ -177,7 +177,7 @@ class Undefined:
     def __bool__(self) -> bool:
         return False
 
-    def __eq__(self, other: Undefined) -> bool:
+    def __eq__(self, other: object) -> bool:
         return self is other
 
     def __hash__(self) -> int:
@@ -274,7 +274,7 @@ class _TypeHandler:
         return subtypesmatch
 
     @staticmethod
-    def type_cast(o: object, t: type) -> bool:
+    def type_cast(o: object, t: type[T]) -> T | Undefined:
         if not isundefined(p := _TypeHandler.type_cast_union(o, t)):
             return p
         if not isundefined(p := _TypeHandler.type_cast_list(o, t)):
