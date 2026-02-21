@@ -36,7 +36,7 @@ __all__ = ["syncy"]
 
 import sys
 
-if sys.version_info < (3, 10):
+if sys.version_info < (3, 10):  # noqa: UP036
     raise SyntaxError("python>=3.10 required")
 
 import argparse
@@ -46,7 +46,8 @@ import subprocess
 import sys
 import warnings
 from abc import ABC, abstractmethod
-from dataclasses import Field, dataclass, field, fields
+from dataclasses import Field, dataclass, fields
+from dataclasses import field as _field
 from pathlib import Path
 from types import NoneType, UnionType
 from typing import (
@@ -58,7 +59,6 @@ from typing import (
     Union,
     final,
     get_args,
-    get_origin,
 )
 
 try:
@@ -233,12 +233,6 @@ class _TypeHandler:
     @staticmethod
     def type_check_undefined(o: object, _: Undefined) -> bool:
         return isundefined(o)
-
-    @staticmethod
-    def type_check_alias(o: object, t: type[UnionType]) -> bool:
-        orig = get_origin(t)
-        args = get_args(t)
-        return any([_TypeHandler.type_check(o, u) for u in args])
 
     @staticmethod
     def type_check_union(o: object, t: type[UnionType]) -> bool:
@@ -520,14 +514,14 @@ class Syncy(Backend, backend="general"):
     class Settings(Backend.Settings):
         # fmt: off
         use                    : str                         = undefined
-        backends               : dict[str, Backend.Settings] = field(default_factory=dict)
+        backends               : dict[str, Backend.Settings] = _field(default_factory=dict)
         source                 : Path                        = undefined
         destination            : Path                        = undefined
-        exclude                : list[str]                   = field(default_factory=list)
-        exclude_from           : list[Path]                  = field(default_factory=list)
+        exclude                : list[str]                   = _field(default_factory=list)
+        exclude_from           : list[Path]                  = _field(default_factory=list)
         exclude_from_gitignore : bool                        = False
-        include                : list[str]                   = field(default_factory=list)
-        include_from           : list[Path]                  = field(default_factory=list)
+        include                : list[str]                   = _field(default_factory=list)
+        include_from           : list[Path]                  = _field(default_factory=list)
         dry                    : bool                        = False
         # fmt: on
 
@@ -582,8 +576,8 @@ class SyncyBackendRsync(Backend, backend="rsync"):
         progress       : bool             = True       # --progress
         delete         : _RsyncDeleteType = "default"  # --delete-{before, after, during} or use default
         dry            : bool             = False      # -n --dry
-        exclude        : list[str]        = field(default_factory=list)  # --exclude
-        include        : list[str]        = field(default_factory=list)  # --include
+        exclude        : list[str]        = _field(default_factory=list)  # --exclude
+        include        : list[str]        = _field(default_factory=list)  # --include
         # fmt: on
 
     def command(
@@ -747,6 +741,36 @@ def syncy(
     envs: dict[str, str] | None = None,
     file: Path | None = None,
 ):
+    """Sync workspaces using a supported backend.
+
+    Syncy is a front end for several syncing tools. It uses a configuration
+    file that applies global configurations to all backend tools. The primary
+    use of syncy is to sync the current workspace (e.g. the current work
+    directory) with an external workspace (e.g. a vm host system).
+
+    Running the following will look for the file `.syncy.toml` to import
+    configurations. A source and destination directories are specified in that
+    file. The backend will use these directories as the sync directories.
+
+    ```bash
+    syncy
+    syncy <source> [<destination>]
+    ```
+
+    A help menu is available for the command line arguments. Environment
+    variables take the form `SYNCY__<CONFIG>` or `SYNCY__<BACKEND>__<CONFIG>`.
+    They use the same name as the command line arguemtns. Config files are
+    more structured. A template config file exists in the code repository
+    for reference.
+
+    Args:
+        argv: Configurations specified via command line arguments.
+            Defaults to `sys.argv`.
+        envs: Configurations specified via environment variables.
+            Defaults to `os.environ`.
+        file: Configurations specified via a config file.
+            Defaults to `.syncy.toml`.
+    """
     if argv is None:
         argv = syncy_default_args()
     if envs is None:
