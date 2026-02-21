@@ -3,7 +3,6 @@
 [![_](https://img.shields.io/pypi/v/syncy)](https://pypi.python.org/pypi/syncy)
 [![_](https://img.shields.io/pypi/pyversions/syncy)](https://github.com/tylerh111/syncy)
 [![_](https://img.shields.io/pypi/l/syncy)](https://github.com/tylerh111/syncy/blob/main/LICENSE.md)
-<!-- [![_](https://img.shields.io/readthedocs/pydantic-pint)](https://pydantic-pint.readthedocs.io) -->
 
 ---
 
@@ -13,7 +12,7 @@ It can also be used to make backups of directories.
 Syncy uses `rsync` for syncing directories, but it is flexible to extend it to other backends.
 
 ```bash
-more .syncy
+more .syncy.toml
 #> [syncy]
 #> source = "path/to/source"
 syncy
@@ -31,7 +30,7 @@ pip install syncy
 
 ### Usage
 
-Syncy is specified via a config file named `.syncy`, `.syncy.toml`, or `.syncy.json` (in order).
+Syncy is specified via a config file named `.syncy.toml`.
 The file will be searched for recursively upwards to the root of the filesystem.
 By default, the directory where the config file is stored is the destination of the sync.
 Note, the `.syncy` file can be either TOML or JSON, and it recommended to use.

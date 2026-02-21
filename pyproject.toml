@@ -1,17 +1,17 @@
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "syncy"
 version = "0.0"
-description = "Sync Workspaces"
+description = "Sync Workspaces!"
 authors = [
     {name = "Tyler Hughes", email = "tylerxh111+git@proton.me"},
 ]
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 keywords = [
     "sync",
 ]
@@ -21,7 +21,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -31,9 +30,6 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = []
-# dynamic = [
-#     "version",
-# ]
 
 [project.optional-dependencies]
 toml = [
@@ -50,7 +46,6 @@ syncy = "syncy:entrypoint"
 source        = "https://github.com/tylerh111/syncy"
 issues        = "https://github.com/tylerh111/syncy/issues"
 changes       = "https://github.com/tylerh111/syncy/blob/main/CHANGES.md"
-documentation = "https://syncy.readthedocs.io"
 
 [tool.bumpver]
 current_version = "0.0"
@@ -62,62 +57,33 @@ push = false
 
 [tool.bumpver.file_patterns]
 "LICENSE.md" = [
-    'Copyright (c) YYYY',
+    'Copyright (c) 2025-YYYY',
 ]
 "pyproject.toml" = [
     'current_version = "{version}"',
     'version = "{version}"',
 ]
-"src/pydantic_pint/__init__.py" = [
+"syncy.py" = [
+    '__date__ = "YYYY-0M-0D"',
+    '__license__ = "Copyright (c) 2025-YYYY Tyler Hughes"',
     '__version__ = "{version}"',
 ]
-
-# [tool.coverage.run]
-# branch = true
-
-# [tool.coverage.report]
-# ignore_errors = true
-# exclude_also = [
-#     "def __repr__",
-#     "if self\\.debug",
-#     "raise AssertionError",
-#     "raise NotImplementedError",
-#     "if 0:",
-#     "if __name__ == .__main__:",
-#     "@(abc\\.)?abstractmethod",
-# ]
-
-# [tool.pytest.ini_options]
-# addopts = ["--import-mode=importlib"]
-# pythonpath = "src"
 
 [tool.ruff]
 line-length = 88
 indent-width = 4
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 # see rules at https://docs.astral.sh/ruff/rules
-# extend-select = ["RUF", "C90", "UP", "I", "D"]
-# extend-ignore = ["D105", "D107", "F541", ]
-# unfixable = ["B"]
-# mccabe = { max-complexity = 14 }
-# pydocstyle = { convention = "google" }
+extend-select = ["RUF", "C90", "UP", "I", "D"]
+extend-ignore = ["D105", "D107", "F541", ]
+unfixable = ["B"]
+mccabe = { max-complexity = 14 }
+pydocstyle = { convention = "google" }
 
 [tool.ruff.lint.isort]
 required-imports = ["from __future__ import annotations"]
 
-# [tool.ruff.lint.per-file-ignores]
-# "__init__.py" = ["E402", "F401"]
-# "**/{docs,tests,tools}/*" = ["E402", "D"]
-# "**/notebooks/**/*.ipynb" = ["E402"]
-# "*.pyi" = ["I002"]
-# "noxfile.py" = ["D"]
-
 [tool.ruff.format]
 quote-style = "double"
-
-# [tool.setuptools_scm]
-# version_scheme = "no-guess-dev"
-# write_to = "src/pydantic_pint/_version.py"
-# fallback_version = "0.1"

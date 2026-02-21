@@ -1,0 +1,28 @@
+# Syncy configurations for all backends.
+[syncy]
+
+# The name of the supported backend syncing tool to use.
+# Available backends are shown in the help menu `syncy --help`.
+# Backend specific configurations have dedicated sections of
+# the config file, grouped by the backend name.
+use = "rsync"
+
+# The data source that will be synced to the destination.
+# Typically this is a folder with several files that need
+# to be copied to the destination. Paths are relative to
+# the current working directory.
+# TODO: - change this to relative to template file -
+source = "./from"
+
+# The destination that will be synced with the source.
+# Typically this is a folder with several files that need
+# to be copied to the destination. Paths are relative to
+# the current working directory.
+# TODO: - change this to relative to template file -
+destination = "./to"
+
+# Dry flag will no perform any action. It will simply parse
+# input arguments, environment, and config files and calculate
+# what files would be copied if the operation were executed.
+# Output may vary based on backend implementation.
+dry = false

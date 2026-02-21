@@ -1,40 +1,63 @@
-"""Sync Workspace"""
+# MIT License
+
+# Copyright (c) 2025-2026 Tyler Hughes
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+"""Sync Workspaces!"""
 
 from __future__ import annotations
 
+# __name__ = "syncy"
+# __doc__ = "Sync Workspaces!"
+__version__ = "0.0"
+__date__ = "2026-02-21"
+__author__ = "Tyler Hughes"
+__license__ = "MIT"
+__copyright__ = "Copyright (c) 2025-2026 Tyler Hughes"
+
+
 import sys
 
-if sys.version_info < (3, 8):
-    raise SyntaxError("python>=3.9 required")
+if sys.version_info < (3, 10):
+    raise SyntaxError("python>=3.10 required")
 
 import argparse
 import itertools
-import logging
 import os
 import subprocess
 import sys
 import warnings
 from abc import ABC, abstractmethod
-from dataclasses import Field, dataclass, field, fields, MISSING
+from dataclasses import Field, dataclass, field, fields
 from pathlib import Path
 from types import NoneType, UnionType
 from typing import (
     Any,
-    Callable,
     ClassVar,
     Literal,
-    Mapping,
-    Protocol,
-    Sequence,
-    TypeVar,
     TypeAlias,
-    TypeAliasType,
+    TypeVar,
     Union,
     final,
     get_args,
     get_origin,
-    get_type_hints,
-    overload,
 )
 
 try:
@@ -146,9 +169,9 @@ class SyncyValidationError(SyncyError):
 @final
 class Undefined:
     __slots__: tuple[str, ...] = ()
-    __instance__: "Undefined"
+    __instance__: Undefined
 
-    def __new__(cls, /) -> "Undefined":
+    def __new__(cls, /) -> Undefined:
         try:
             return cls.__dict__["__instance__"]
         except KeyError:
@@ -158,7 +181,7 @@ class Undefined:
     def __bool__(self) -> bool:
         return False
 
-    def __eq__(self, other: "Undefined") -> bool:
+    def __eq__(self, other: Undefined) -> bool:
         return self is other
 
     def __hash__(self) -> int:
@@ -423,7 +446,7 @@ def validate(inst: object, field: Field):
 ##==============================================================================
 
 
-_syncy_backend_registry: dict[str, "Backend"] = {}
+_syncy_backend_registry: dict[str, Backend] = {}
 
 
 class Backend(ABC):
@@ -454,7 +477,6 @@ class Backend(ABC):
             for field in fields(self):
                 if field.name not in ("syncy_backend_name",) and field.type not in (
                     TypeAlias,
-                    TypeAliasType,
                 ):
                     validate(self, field)
 
@@ -480,14 +502,14 @@ class Backend(ABC):
         _syncy_backend_registry[backend] = cls
 
     @classmethod
-    def lookup(cls, syncy_backend_name: str, /) -> type["Backend"]:
+    def lookup(cls, syncy_backend_name: str, /) -> type[Backend]:
         try:
             return _syncy_backend_registry[syncy_backend_name]
         except KeyError as e:
             raise SyncyBackendError(f"unknown syncy backend '{e}'") from None
 
     @abstractmethod
-    def run(self, settings: "Syncy.Settings"):
+    def run(self, settings: Syncy.Settings):
         pass
 
 
