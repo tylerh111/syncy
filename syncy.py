@@ -445,20 +445,17 @@ class Backend(ABC):
     @dataclass
     class Settings:
         # fmt: off
-        syncy_backend_name     : ClassVar[str]
-        syncy_backend_enabled  : bool          = True
-        syncy_backend_priority : int           = 0
+        syncy_backend_name    : ClassVar[str]
+        syncy_backend_enabled : bool          = True
         # fmt: on
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
-            group.add_argument(f"--{cls.syncy_backend_name}-enabled")
-            group.add_argument(f"--{cls.syncy_backend_name}-priority")
+            group.add_argument(f"--syncy-{cls.syncy_backend_name}-enabled", dest="syncy_backend_name")
             for field in fields(cls):
                 if field.name not in (
                     "syncy_backend_name",
                     "syncy_backend_enabled",
-                    "syncy_backend_priority",
                 ):
                     name = field.name.replace("_", "-")
                     group.add_argument(f"--{cls.syncy_backend_name}-{name}")
@@ -513,29 +510,29 @@ class Syncy(Backend, backend="general"):
     @dataclass
     class Settings(Backend.Settings):
         # fmt: off
-        use                    : str                         = undefined
         backends               : dict[str, Backend.Settings] = _field(default_factory=dict)
+        use                    : str                         = undefined
         source                 : Path                        = undefined
-        destination            : Path                        = undefined
-        exclude                : list[str]                   = _field(default_factory=list)
-        exclude_from           : list[Path]                  = _field(default_factory=list)
-        exclude_from_gitignore : bool                        = False
-        include                : list[str]                   = _field(default_factory=list)
-        include_from           : list[Path]                  = _field(default_factory=list)
+        destination            : Path                        = Path.cwd()
         dry                    : bool                        = False
+        # exclude                : list[str]                   = _field(default_factory=list)
+        # exclude_from           : list[Path]                  = _field(default_factory=list)
+        # exclude_from_gitignore : bool                        = False
+        # include                : list[str]                   = _field(default_factory=list)
+        # include_from           : list[Path]                  = _field(default_factory=list)
         # fmt: on
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
-            group.add_argument("-b", "--use")
-            group.add_argument("-o", "--destination")
-            group.add_argument("--exclude")
-            group.add_argument("--exclude-from")
-            group.add_argument("--exclude-from-gitignore")
-            group.add_argument("--include")
-            group.add_argument("--include-from")
-            group.add_argument("-r", "--dry")
             group.add_argument("source")
+            group.add_argument("destination")
+            group.add_argument("-b", "--use")
+            group.add_argument("-r", "--dry")
+            # group.add_argument("--exclude")
+            # group.add_argument("--exclude-from")
+            # group.add_argument("--exclude-from-gitignore")
+            # group.add_argument("--include")
+            # group.add_argument("--include-from")
 
         def validate(self):
             self.backends = {
@@ -576,8 +573,8 @@ class SyncyBackendRsync(Backend, backend="rsync"):
         progress       : bool             = True       # --progress
         delete         : _RsyncDeleteType = "default"  # --delete-{before, after, during} or use default
         dry            : bool             = False      # -n --dry
-        exclude        : list[str]        = _field(default_factory=list)  # --exclude
-        include        : list[str]        = _field(default_factory=list)  # --include
+        # exclude        : list[str]        = _field(default_factory=list)  # --exclude
+        # include        : list[str]        = _field(default_factory=list)  # --include
         # fmt: on
 
     def command(
@@ -602,12 +599,12 @@ class SyncyBackendRsync(Backend, backend="rsync"):
             *add_args_if(rsync.progress,            "--progress"              ),
             *add_args_if(rsync.delete != "default", f"--delete-{rsync.delete}"),
             *add_args_if(rsync.dry or syncy.dry,    "--dry-run"               ),
-            *add_args_if(rsync.exclude or syncy.exclude, [
-                f"--exclude={pattern}" for pattern in itertools.chain(rsync.exclude, syncy.exclude)
-            ]),
-            *add_args_if(rsync.include or syncy.exclude, [
-                f"--include={pattern}" for pattern in itertools.chain(rsync.include, syncy.include)
-            ]),
+            # *add_args_if(rsync.exclude or syncy.exclude, [
+            #     f"--exclude={pattern}" for pattern in itertools.chain(rsync.exclude, syncy.exclude)
+            # ]),
+            # *add_args_if(rsync.include or syncy.exclude, [
+            #     f"--include={pattern}" for pattern in itertools.chain(rsync.include, syncy.include)
+            # ]),
             syncy.source.as_posix(),
             syncy.destination.as_posix(),
         ]  # fmt: skip
@@ -631,7 +628,7 @@ def _argument_parser():
         "syncy",
         add_help=True,
         exit_on_error=False,
-        usage="%(prog)s [-h] [-b backend] [-r] source [destination ...]",
+        usage="%(prog)s [-h] [-b backend] [-r] source [destination]",
     )
     for name, backend in _syncy_backend_registry.items():
         backend.Settings.arguments(parser.add_argument_group(name))
