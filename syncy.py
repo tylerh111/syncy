@@ -39,24 +39,28 @@ from typing import (
 
 try:
     import json  # type: ignore
+
     _HAVE_JSON = True
 except ImportError:
     _HAVE_JSON = False
 
 try:
     import tomllib  # type: ignore
+
     _HAVE_TOMLLIB = True
 except ImportError:
     _HAVE_TOMLLIB = False
 
 try:
     import toml  # type: ignore
+
     _HAVE_TOML = True
 except ImportError:
     _HAVE_TOML = False
 
 try:
     import dotenv  # type: ignore
+
     _HAVE_DOTENV = True
 except ImportError:
     _HAVE_DOTENV = False
@@ -109,7 +113,9 @@ def syncy_default_file(
             path = path.parent
 
     if _raise:
-        raise FileNotFoundError(f"could not find config file (up to mount point {start})")
+        raise FileNotFoundError(
+            f"could not find config file (up to mount point {start})"
+        )
 
     warnings.warn(f"could not find config file (up to mount point {start})")
     return None
@@ -182,17 +188,16 @@ def add_args_if(
 
 
 class _TypeHandler:
-
     @staticmethod
     def type_check(o: object, t: type) -> bool:
         return (
-            _TypeHandler.type_check_none(o, t) or
-            _TypeHandler.type_check_undefined(o, t) or
-            _TypeHandler.type_check_union(o, t) or
-            _TypeHandler.type_check_literal(o, t) or
-            _TypeHandler.type_check_list(o, t) or
-            _TypeHandler.type_check_dict(o, t) or
-            _TypeHandler.type_check_regular(o, t)
+            _TypeHandler.type_check_none(o, t)
+            or _TypeHandler.type_check_undefined(o, t)
+            or _TypeHandler.type_check_union(o, t)
+            or _TypeHandler.type_check_literal(o, t)
+            or _TypeHandler.type_check_list(o, t)
+            or _TypeHandler.type_check_dict(o, t)
+            or _TypeHandler.type_check_regular(o, t)
         )
 
     @staticmethod
@@ -246,8 +251,12 @@ class _TypeHandler:
         args = get_args(t)
         subtypesmatch = True
         if args:
-            subtypesmatch &= all([_TypeHandler.type_check(p, args[0]) for p in o.keys()])
-            subtypesmatch &= all([_TypeHandler.type_check(p, args[0]) for p in o.values()])
+            subtypesmatch &= all(
+                [_TypeHandler.type_check(p, args[0]) for p in o.keys()]
+            )
+            subtypesmatch &= all(
+                [_TypeHandler.type_check(p, args[0]) for p in o.values()]
+            )
 
         return subtypesmatch
 
@@ -305,8 +314,8 @@ class _TypeHandler:
         args = get_args(t)
         if isinstance(o, dict) and args:
             return {
-                _TypeHandler.type_cast(k, args[1]):
-                _TypeHandler.type_cast(v, args[0]) for k, v in o.items()
+                _TypeHandler.type_cast(k, args[1]): _TypeHandler.type_cast(v, args[0])
+                for k, v in o.items()
             }
 
         return undefined
@@ -351,9 +360,7 @@ def type_check(
         _expected = expected
 
     if isundefined(_expected):
-        raise TypeError(
-            f"unknown type {expected!r}"
-        )
+        raise TypeError(f"unknown type {expected!r}")
 
     if isundefined(o):
         raise SyncyValidationError(
@@ -381,9 +388,7 @@ def type_cast(
         _expected = expected
 
     if isundefined(_expected):
-        raise TypeError(
-            f"unknown type {expected!r}"
-        )
+        raise TypeError(f"unknown type {expected!r}")
 
     if isundefined(o):
         raise SyncyValidationError(
@@ -422,14 +427,15 @@ _syncy_backend_registry: dict[str, "Backend"] = {}
 
 
 class Backend(ABC):
-
     syncy_backend_name: ClassVar[str]
 
     @dataclass
     class Settings:
-        syncy_backend_name: ClassVar[str]
+        # fmt: off
+        syncy_backend_name     : ClassVar[str]
         syncy_backend_enabled  : bool          = True
         syncy_backend_priority : int           = 0
+        # fmt: on
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
@@ -446,9 +452,9 @@ class Backend(ABC):
 
         def validate(self):
             for field in fields(self):
-                if (
-                    field.name not in ("syncy_backend_name",) and
-                    field.type not in (TypeAlias, TypeAliasType)
+                if field.name not in ("syncy_backend_name",) and field.type not in (
+                    TypeAlias,
+                    TypeAliasType,
                 ):
                     validate(self, field)
 
@@ -460,8 +466,7 @@ class Backend(ABC):
 
         if not hasattr(cls, "Settings"):
             raise TypeError(
-                f"cannot subclass backend {cls.__name__} without "
-                "inner class `Settings`"
+                f"cannot subclass backend {cls.__name__} without inner class `Settings`"
             )
         if not issubclass(cls.Settings, Backend.Settings):
             raise TypeError(
@@ -493,9 +498,9 @@ class Backend(ABC):
 
 # special type of backend that defers execution based on `use`
 class Syncy(Backend, backend="general"):
-
     @dataclass
     class Settings(Backend.Settings):
+        # fmt: off
         use                    : str                         = undefined
         backends               : dict[str, Backend.Settings] = field(default_factory=dict)
         source                 : Path                        = undefined
@@ -506,6 +511,7 @@ class Syncy(Backend, backend="general"):
         include                : list[str]                   = field(default_factory=list)
         include_from           : list[Path]                  = field(default_factory=list)
         dry                    : bool                        = False
+        # fmt: on
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
@@ -540,9 +546,9 @@ class Syncy(Backend, backend="general"):
 
 
 class SyncyBackendRsync(Backend, backend="rsync"):
-
     @dataclass
     class Settings(Backend.Settings):
+        # fmt: off
         archive        : bool             = True       # -a --archive (equivalent: -rlptgoD)
         recursive      : bool             = False      # -r --recursive
         links          : bool             = False      # -l --links
@@ -560,8 +566,13 @@ class SyncyBackendRsync(Backend, backend="rsync"):
         dry            : bool             = False      # -n --dry
         exclude        : list[str]        = field(default_factory=list)  # --exclude
         include        : list[str]        = field(default_factory=list)  # --include
+        # fmt: on
 
-    def command(cls, syncy: Syncy.Settings, rsync: SyncyBackendRsync.Settings) -> list[str]:
+    def command(
+        cls,
+        syncy: Syncy.Settings,
+        rsync: SyncyBackendRsync.Settings,
+    ) -> list[str]:
         return [
             "rsync",
             *add_args_if(rsync.archive,             "--archive"               ),
@@ -596,8 +607,6 @@ class SyncyBackendRsync(Backend, backend="rsync"):
         if not cont.lower().startswith("y"):
             return
         subprocess.run(cmd, check=True)
-
-
 
 
 ##==============================================================================
