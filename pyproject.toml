@@ -44,7 +44,7 @@ dotenv = [
 ]
 
 [project.scripts]
-syncy = "syncy:syncy"
+syncy = "syncy:entrypoint"
 
 [project.urls]
 source        = "https://github.com/tylerh111/syncy"
