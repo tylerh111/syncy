@@ -68,21 +68,21 @@ The following is all the `syncy.rsync` configurations.
 
 | Under         | Configuration    | Env      | Cmd      | Description                                                        | Default |
 |---------------|------------------|:--------:|:--------:|--------------------------------------------------------------------|---------|
-| `syncy.rsync` | `archive`        | &#x2705; | &#x274c; | same as `-a` / `--archive` (equivalent to `*`)                     | `True`  |
-| `syncy.rsync` | `recursive`      | &#x2705; | &#x274c; | same as `-r` / `--recursive`                                       | `False` |
-| `syncy.rsync` | `links`          | &#x2705; | &#x274c; | same as `-l` / `--links`                                           | `False` |
-| `syncy.rsync` | `permissions`    | &#x2705; | &#x274c; | same as `-p` / `--permissions`                                     | `False` |
-| `syncy.rsync` | `times`          | &#x2705; | &#x274c; | same as `-t` / `--times`                                           | `False` |
-| `syncy.rsync` | `group`          | &#x2705; | &#x274c; | same as `-g` / `--group`                                           | `False` |
-| `syncy.rsync` | `owner`          | &#x2705; | &#x274c; | same as `-o` / `--owner`                                           | `False` |
-| `syncy.rsync` | `devices`        | &#x2705; | &#x274c; | same as `--devices`                                                | `False` |
-| `syncy.rsync` | `specials`       | &#x2705; | &#x274c; | same as `--specials`                                               | `False` |
-| `syncy.rsync` | `verbose`        | &#x2705; | &#x274c; | same as `-v` / `--verbose`                                         | `1`     |
-| `syncy.rsync` | `human_readable` | &#x2705; | &#x274c; | same as `-h` / `--human-readable`                                  | `True`  |
-| `syncy.rsync` | `partial`        | &#x2705; | &#x274c; | same as `--partial`                                                | `True`  |
-| `syncy.rsync` | `progress`       | &#x2705; | &#x274c; | same as `--progress`                                               | `True`  |
-| `syncy.rsync` | `delete`         | &#x2705; | &#x274c; | same as `--delete-before` or `--delete-after` or `--delete-during` | `None`  |
-| `syncy.rsync` | `dry`            | &#x2705; | &#x274c; | same as `-n` / `--dry`                                             | `False` |
+| `syncy.rsync` | `archive`        | &#x2705; | &#x2705; | same as `-a` / `--archive` (equivalent to `-rlptgoD`)              | `True`  |
+| `syncy.rsync` | `recursive`      | &#x2705; | &#x2705; | same as `-r` / `--recursive`                                       | `False` |
+| `syncy.rsync` | `links`          | &#x2705; | &#x2705; | same as `-l` / `--links`                                           | `False` |
+| `syncy.rsync` | `permissions`    | &#x2705; | &#x2705; | same as `-p` / `--permissions`                                     | `False` |
+| `syncy.rsync` | `times`          | &#x2705; | &#x2705; | same as `-t` / `--times`                                           | `False` |
+| `syncy.rsync` | `group`          | &#x2705; | &#x2705; | same as `-g` / `--group`                                           | `False` |
+| `syncy.rsync` | `owner`          | &#x2705; | &#x2705; | same as `-o` / `--owner`                                           | `False` |
+| `syncy.rsync` | `devices`        | &#x2705; | &#x2705; | same as `--devices`                                                | `False` |
+| `syncy.rsync` | `specials`       | &#x2705; | &#x2705; | same as `--specials`                                               | `False` |
+| `syncy.rsync` | `verbose`        | &#x2705; | &#x2705; | same as `-v` / `--verbose`                                         | `1`     |
+| `syncy.rsync` | `human_readable` | &#x2705; | &#x2705; | same as `-h` / `--human-readable`                                  | `True`  |
+| `syncy.rsync` | `partial`        | &#x2705; | &#x2705; | same as `--partial`                                                | `True`  |
+| `syncy.rsync` | `progress`       | &#x2705; | &#x2705; | same as `--progress`                                               | `True`  |
+| `syncy.rsync` | `delete`         | &#x2705; | &#x2705; | same as `--delete-before` or `--delete-after` or `--delete-during` | `None`  |
+| `syncy.rsync` | `dry`            | &#x2705; | &#x2705; | same as `-n` / `--dry`                                             | `False` |
 | `syncy.rsync` | `exclude`        | &#x2705; | &#x274c; | same as `--exclude`                                                | `[]`    |
 | `syncy.rsync` | `exclude_from`   | &#x2705; | &#x274c; | same as `--exclude-from`                                           | `[]`    |
 | `syncy.rsync` | `include`        | &#x2705; | &#x274c; | same as `--include`                                                | `[]`    |

@@ -11,14 +11,14 @@ use = "rsync"
 # Typically this is a folder with several files that need
 # to be copied to the destination. Paths are relative to
 # the current working directory.
-# TODO: - change this to relative to template file -
+# TODO: - change this to relative to config file -
 source = "./from"
 
 # The destination that will be synced with the source.
 # Typically this is a folder with several files that need
 # to be copied to the destination. Paths are relative to
 # the current working directory.
-# TODO: - change this to relative to template file -
+# TODO: - change this to relative to config file -
 destination = "./to"
 
 # Dry flag will no perform any action. It will simply parse
