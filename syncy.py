@@ -739,7 +739,6 @@ def _clean_arguments(args: dict) -> dict:
 
 
 def syncy_parse_args(argv: list[str]) -> dict[str, Any]:
-    print(argv)
     if not argv:
         return {"syncy": {}}
     try:
@@ -748,7 +747,6 @@ def syncy_parse_args(argv: list[str]) -> dict[str, Any]:
         args = vars(args)
         args = _expand_dictionary(args)
         args = _clean_arguments(args)
-        pprint(args)
         return args
     except argparse.ArgumentError:
         raise
@@ -812,35 +810,17 @@ def syncy_settings_underlying(
 
     # parse os env
     if envs is not None:
-        nsettings = syncy_parse_envs(envs)
-        print("(envs) new  ")
-        pprint(nsettings)
-        settings = _merge_dict(settings, nsettings)
-        # settings |= nsettings
-        print("(envs) merge")
-        pprint(settings)
+        settings = _merge_dict(settings, syncy_parse_envs(envs))
 
     # parse config file
     if file is not None:
-        nsettings = syncy_parse_file(file)
-        print("(file) new  ")
-        pprint(nsettings)
-        settings = _merge_dict(settings, nsettings)
-        # settings |= nsettings
-        print("(file) merge")
-        pprint(settings)
+        settings = _merge_dict(settings, syncy_parse_file(file))
     else:
         warnings.warn(f"could not find config file (up to mount point {Path.cwd()})")
 
     # parse cli args
     if argv is not None:
-        nsettings = syncy_parse_args(argv)
-        print("(argv) new  ")
-        pprint(nsettings)
-        settings = _merge_dict(settings, nsettings)
-        # settings |= nsettings
-        print("(argv) merge")
-        pprint(settings)
+        settings = _merge_dict(settings, syncy_parse_args(argv))
 
     return settings
 
@@ -863,9 +843,7 @@ def syncy_settings(
     if isundefined(settings.destination):
         raise SyncyError("no destination directory provided")
 
-    print(settings.backends)
     settings.validate()
-    print(settings.backends)
 
     return settings
 
