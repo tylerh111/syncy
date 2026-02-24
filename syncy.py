@@ -40,6 +40,7 @@ if sys.version_info < (3, 10):  # noqa: UP036
     raise SyntaxError("python>=3.10 required")
 
 import argparse
+import copy
 import itertools
 import os
 import subprocess
@@ -61,6 +62,8 @@ from typing import (
     get_args,
 )
 
+from pprint import pprint
+
 try:
     import json  # type: ignore
 
@@ -69,18 +72,18 @@ except ImportError:
     _HAVE_JSON = False
 
 try:
-    import tomllib  # type: ignore
-
-    _HAVE_TOMLLIB = True
-except ImportError:
-    _HAVE_TOMLLIB = False
-
-try:
     import toml  # type: ignore
 
     _HAVE_TOML = True
 except ImportError:
     _HAVE_TOML = False
+
+try:
+    import tomllib  # type: ignore
+
+    _HAVE_TOMLLIB = True
+except ImportError:
+    _HAVE_TOMLLIB = False
 
 try:
     import dotenv  # type: ignore
@@ -110,7 +113,7 @@ SYNCY_SETTINGS_FILE: list[str] = [
 
 
 def syncy_default_args() -> list[str]:
-    return [*sys.argv]
+    return [*sys.argv][1:]
 
 
 def syncy_default_envs() -> dict[str, str]:
@@ -136,7 +139,6 @@ def syncy_default_file(
             f"could not find config file (up to mount point {start})"
         )
 
-    warnings.warn(f"could not find config file (up to mount point {start})")
     return None
 
 
@@ -204,6 +206,24 @@ def add_args_if(
 ) -> tuple[()] | tuple[str, ...]:
     # usage `*add_args_if(...)`
     return args if expr else ()
+
+
+def _merge_dict(
+    this: dict,
+    that: dict,
+) -> dict:
+    res = copy.deepcopy(this)
+    for k, v in that.items():
+        if k in res and isinstance(res[k], dict) and isinstance(v, dict):
+            res[k] = _merge_dict(res[k], v)
+        else:
+            res[k] = v
+
+    return res
+
+
+def _choices(choices: type[Literal[""]]) -> tuple[str]:
+    return get_args(choices)
 
 
 class _TypeHandler:
@@ -458,7 +478,12 @@ class Backend(ABC):
                     "syncy_backend_enabled",
                 ):
                     name = field.name.replace("_", "-")
-                    group.add_argument(f"--{cls.syncy_backend_name}-{name}")
+
+                    # Default being undefined will signal for this value to be
+                    # removed return arguments. This is to ensure the setting
+                    # defaults do not overwrite the env variables or config file
+                    # settings.
+                    group.add_argument(f"--{cls.syncy_backend_name}-{name}", default=undefined)
 
         def validate(self):
             for field in fields(self):
@@ -524,10 +549,10 @@ class Syncy(Backend, backend="general"):
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
-            group.add_argument("source")
-            group.add_argument("destination")
-            group.add_argument("-b", "--use")
-            group.add_argument("-r", "--dry")
+            group.add_argument("source",                        default=undefined, nargs="?", type=Path, help="asdfasdf")
+            group.add_argument("destination",                   default=undefined, nargs="?", type=Path, help="asdfasdf")
+            group.add_argument("-b", "--use", dest="syncy.use", default=undefined, required=False, type=str,                                         help="asdfasdf")
+            group.add_argument("-r", "--dry", dest="syncy.dry", default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction, help="asdfasdf")
             # group.add_argument("--exclude")
             # group.add_argument("--exclude-from")
             # group.add_argument("--exclude-from-gitignore")
@@ -577,6 +602,26 @@ class SyncyBackendRsync(Backend, backend="rsync"):
         # include        : list[str]        = _field(default_factory=list)  # --include
         # fmt: on
 
+        @classmethod
+        def arguments(cls, /, group: argparse.ArgumentParser):
+            # fmt: off
+            group.add_argument("--rsync-archive",        dest="syncy.backends.rsync.archive",        default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-a'"            )
+            group.add_argument("--rsync-recursive",      dest="syncy.backends.rsync.recursive",      default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-r'"            )
+            group.add_argument("--rsync-links",          dest="syncy.backends.rsync.links",          default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-l'"            )
+            group.add_argument("--rsync-permissions",    dest="syncy.backends.rsync.permissions",    default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-p'"            )
+            group.add_argument("--rsync-times",          dest="syncy.backends.rsync.times",          default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-t'"            )
+            group.add_argument("--rsync-group",          dest="syncy.backends.rsync.group",          default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-g'"            )
+            group.add_argument("--rsync-owner",          dest="syncy.backends.rsync.owner",          default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-o'"            )
+            group.add_argument("--rsync-devices",        dest="syncy.backends.rsync.devices",        default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--devices'"     )
+            group.add_argument("--rsync-specials",       dest="syncy.backends.rsync.specials",       default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--specials'"    )
+            group.add_argument("--rsync-verbose",        dest="syncy.backends.rsync.verbose",        default=undefined, required=False, type=int,  nargs=1,                                     help="equivalent to rsync option '-v'"            )
+            group.add_argument("--rsync-human-readable", dest="syncy.backends.rsync.human_readable", default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-h'"            )
+            group.add_argument("--rsync-partial",        dest="syncy.backends.rsync.partial",        default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--partial'"     )
+            group.add_argument("--rsync-progress",       dest="syncy.backends.rsync.progress",       default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--progress'"    )
+            group.add_argument("--rsync-delete",         dest="syncy.backends.rsync.delete",         default=undefined, required=False, type=str,  nargs=1, choices=_choices(_RsyncDeleteType), help="equivalent to rsync option '--delete-{...}'")
+            group.add_argument("--rsync-dry",            dest="syncy.backends.rsync.dry",            default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-n'"            )
+            # fmt: on
+
     def command(
         cls,
         syncy: Syncy.Settings,
@@ -610,10 +655,15 @@ class SyncyBackendRsync(Backend, backend="rsync"):
         ]  # fmt: skip
 
     def run(self, syncy: Syncy.Settings):
-        rsync = self.settings
+        rsync: SyncyBackendRsync.Settings = self.settings
         cmd = self.command(syncy, rsync)
-        cont = input(f"executing: {' '.join(map(str, cmd))} \ncontinue? [y/N] ")
-        if not cont.lower().startswith("y"):
+        cont = True
+        pprint(cmd)
+        return
+        if not (syncy.dry or rsync.dry):
+            cont = input(f"executing: {' '.join(map(str, cmd))} \ncontinue? [y/N] ")
+            cont = cont.lower().startswith("y")
+        if not cont:
             return
         subprocess.run(cmd, check=True)
 
@@ -623,26 +673,86 @@ class SyncyBackendRsync(Backend, backend="rsync"):
 ##==============================================================================
 
 
+
+class _CustomArgparseFormatter(argparse.HelpFormatter):
+    def _format_action_invocation(self, action):
+        # Override boolean options with `--[no]-` prefix.
+        # E.g. `--flag` and `--no-flag` are displayed as `--[no]-flag`
+        if isinstance(action, argparse.BooleanOptionalAction):
+            base_flag = action.option_strings[0]
+            if base_flag.startswith('--'):
+                return f"--[no]-{base_flag[2:]}"
+
+        return super()._format_action_invocation(action)
+
+
 def _argument_parser():
     parser = argparse.ArgumentParser(
         "syncy",
         add_help=True,
+        formatter_class=_CustomArgparseFormatter,
         exit_on_error=False,
-        usage="%(prog)s [-h] [-b backend] [-r] source [destination]",
+        usage="%(prog)s [-h] [-b backend] [-r] [source] [destination]",
     )
+
     for name, backend in _syncy_backend_registry.items():
         backend.Settings.arguments(parser.add_argument_group(name))
 
     return parser
 
+def _expand_dictionary(args: dict[str, Any]) -> dict:
+    # replace `{"a.b.c": x}` with `{"a": {"b": {"c": x}}}`
+    res = {"syncy": {}}
+    for k, v in args.items():
+        path = k.split(".")
+        inner = res
+        for part in path[:-1]:
+            inner.setdefault(part, {})
+            inner = inner[part]
+        if inner is not None:
+            inner[path[-1]] = v
+
+    # special cases for `source` and `destination` arguments
+    # ... because argparse sucks
+    src = res.pop("source", None)
+    if src is not None:
+        res["syncy"]["source"] = src
+    dest = res.pop("destination", None)
+    if dest is not None:
+        res["syncy"]["destination"] = dest
+
+    return res
+
+
+
+
+def _clean_arguments(args: dict) -> dict:
+    # removes all undefined arguments
+    res = {}
+    for k, v in args.items():
+        if isinstance(v, dict):
+            res[k] = _clean_arguments(v)
+        elif not isundefined(v):
+            res[k] = v
+
+    return res
+
 
 def syncy_parse_args(argv: list[str]) -> dict[str, Any]:
+    print(argv)
+    if not argv:
+        return {"syncy": {}}
     try:
         parser = _argument_parser()
         args = parser.parse_args(argv)
-        return vars(args)
+        args = vars(args)
+        args = _expand_dictionary(args)
+        args = _clean_arguments(args)
+        pprint(args)
+        return args
     except argparse.ArgumentError:
-        return {}
+        raise
+        return {"syncy": {}}
 
 
 def syncy_parse_envs(
@@ -665,7 +775,7 @@ def syncy_parse_envs(
             d = d.setdefault(k, {})
         d[ks[-2]] = ks[-1]
 
-    return res
+    return {"syncy": res}
 
 
 def syncy_parse_file(file: Path) -> dict[str, Any]:
@@ -702,15 +812,35 @@ def syncy_settings_underlying(
 
     # parse os env
     if envs is not None:
-        settings |= syncy_parse_envs(envs)
+        nsettings = syncy_parse_envs(envs)
+        print("(envs) new  ")
+        pprint(nsettings)
+        settings = _merge_dict(settings, nsettings)
+        # settings |= nsettings
+        print("(envs) merge")
+        pprint(settings)
 
     # parse config file
     if file is not None:
-        settings |= syncy_parse_file(file)
+        nsettings = syncy_parse_file(file)
+        print("(file) new  ")
+        pprint(nsettings)
+        settings = _merge_dict(settings, nsettings)
+        # settings |= nsettings
+        print("(file) merge")
+        pprint(settings)
+    else:
+        warnings.warn(f"could not find config file (up to mount point {Path.cwd()})")
 
     # parse cli args
     if argv is not None:
-        settings |= syncy_parse_args(argv)
+        nsettings = syncy_parse_args(argv)
+        print("(argv) new  ")
+        pprint(nsettings)
+        settings = _merge_dict(settings, nsettings)
+        # settings |= nsettings
+        print("(argv) merge")
+        pprint(settings)
 
     return settings
 
@@ -723,8 +853,15 @@ def syncy_settings(
     # defaults < env < file < args
     settings = syncy_settings_underlying(argv, envs, file)
     settings = Syncy.Settings(**settings["syncy"])
-    if settings.use is None:
+
+    if isundefined(settings.use):
         raise SyncyError("no backend provided")
+
+    if isundefined(settings.source):
+        raise SyncyError("no source directory provided")
+
+    if isundefined(settings.destination):
+        raise SyncyError("no destination directory provided")
 
     print(settings.backends)
     settings.validate()
