@@ -32,11 +32,11 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-toml = [
-    "toml",
-]
 dotenv = [
     "dotenv",
+]
+toml = [
+    "toml; python_version < '3.11'",
 ]
 
 [project.scripts]
