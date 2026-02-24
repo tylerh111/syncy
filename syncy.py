@@ -471,19 +471,14 @@ class Backend(ABC):
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
-            group.add_argument(f"--syncy-{cls.syncy_backend_name}-enabled", dest="syncy_backend_name")
-            for field in fields(cls):
-                if field.name not in (
-                    "syncy_backend_name",
-                    "syncy_backend_enabled",
-                ):
-                    name = field.name.replace("_", "-")
-
-                    # Default being undefined will signal for this value to be
-                    # removed return arguments. This is to ensure the setting
-                    # defaults do not overwrite the env variables or config file
-                    # settings.
-                    group.add_argument(f"--{cls.syncy_backend_name}-{name}", default=undefined)
+            group.add_argument(
+                f"--syncy-{cls.syncy_backend_name}-enabled",
+                dest="syncy_backend_enabled",
+                default=undefined,
+                required=False,
+                action=argparse.BooleanOptionalAction,
+                help=f"enable backend: {cls.syncy_backend_name}",
+            )
 
         def validate(self):
             for field in fields(self):
@@ -604,22 +599,23 @@ class SyncyBackendRsync(Backend, backend="rsync"):
 
         @classmethod
         def arguments(cls, /, group: argparse.ArgumentParser):
+            super().arguments(group)
             # fmt: off
-            group.add_argument("--rsync-archive",        dest="syncy.backends.rsync.archive",        default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-a'"            )
-            group.add_argument("--rsync-recursive",      dest="syncy.backends.rsync.recursive",      default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-r'"            )
-            group.add_argument("--rsync-links",          dest="syncy.backends.rsync.links",          default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-l'"            )
-            group.add_argument("--rsync-permissions",    dest="syncy.backends.rsync.permissions",    default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-p'"            )
-            group.add_argument("--rsync-times",          dest="syncy.backends.rsync.times",          default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-t'"            )
-            group.add_argument("--rsync-group",          dest="syncy.backends.rsync.group",          default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-g'"            )
-            group.add_argument("--rsync-owner",          dest="syncy.backends.rsync.owner",          default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-o'"            )
-            group.add_argument("--rsync-devices",        dest="syncy.backends.rsync.devices",        default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--devices'"     )
-            group.add_argument("--rsync-specials",       dest="syncy.backends.rsync.specials",       default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--specials'"    )
-            group.add_argument("--rsync-verbose",        dest="syncy.backends.rsync.verbose",        default=undefined, required=False, type=int,  nargs=1,                                     help="equivalent to rsync option '-v'"            )
-            group.add_argument("--rsync-human-readable", dest="syncy.backends.rsync.human_readable", default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-h'"            )
-            group.add_argument("--rsync-partial",        dest="syncy.backends.rsync.partial",        default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--partial'"     )
-            group.add_argument("--rsync-progress",       dest="syncy.backends.rsync.progress",       default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--progress'"    )
-            group.add_argument("--rsync-delete",         dest="syncy.backends.rsync.delete",         default=undefined, required=False, type=str,  nargs=1, choices=_choices(_RsyncDeleteType), help="equivalent to rsync option '--delete-{...}'")
-            group.add_argument("--rsync-dry",            dest="syncy.backends.rsync.dry",            default=undefined, required=False, type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-n'"            )
+            group.add_argument("--rsync-archive",        dest="syncy.backends.rsync.archive",        type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-a'",             default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-recursive",      dest="syncy.backends.rsync.recursive",      type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-r'",             default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-links",          dest="syncy.backends.rsync.links",          type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-l'",             default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-permissions",    dest="syncy.backends.rsync.permissions",    type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-p'",             default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-times",          dest="syncy.backends.rsync.times",          type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-t'",             default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-group",          dest="syncy.backends.rsync.group",          type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-g'",             default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-owner",          dest="syncy.backends.rsync.owner",          type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-o'",             default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-devices",        dest="syncy.backends.rsync.devices",        type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--devices'",      default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-specials",       dest="syncy.backends.rsync.specials",       type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--specials'",     default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-verbose",        dest="syncy.backends.rsync.verbose",        type=int,  nargs=1,                                     help="equivalent to rsync option '-v'",             default=undefined, required=False, metavar="<n>"                                      )
+            group.add_argument("--rsync-human-readable", dest="syncy.backends.rsync.human_readable", type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-h'",             default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-partial",        dest="syncy.backends.rsync.partial",        type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--partial'",      default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-progress",       dest="syncy.backends.rsync.progress",       type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '--progress'",     default=undefined, required=False, metavar=""                                         )
+            group.add_argument("--rsync-delete",         dest="syncy.backends.rsync.delete",         type=str,  nargs=1, choices=_choices(_RsyncDeleteType), help="equivalent to rsync option '--delete-{...}'", default=undefined, required=False, metavar=f"<{','.join(_choices(_RsyncDeleteType))}>")
+            group.add_argument("--rsync-dry",            dest="syncy.backends.rsync.dry",            type=bool, action=argparse.BooleanOptionalAction,       help="equivalent to rsync option '-n'",             default=undefined, required=False, metavar=""                                         )
             # fmt: on
 
     def command(
