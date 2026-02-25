@@ -738,8 +738,6 @@ def _expand_dictionary(args: dict[str, Any]) -> dict:
     return res
 
 
-
-
 def _clean_arguments(args: dict) -> dict:
     # removes all undefined arguments
     res = {}
@@ -763,7 +761,6 @@ def syncy_parse_args(argv: list[str]) -> dict[str, Any]:
         args = _clean_arguments(args)
         return args
     except argparse.ArgumentError:
-        raise
         return {"syncy": {}}
 
 
@@ -874,20 +871,34 @@ def syncy(
     use of syncy is to sync the current workspace (e.g. the current work
     directory) with an external workspace (e.g. a vm host system).
 
-    Running the following will look for the file `.syncy.toml` to import
-    configurations. A source and destination directories are specified in that
-    file. The backend will use these directories as the sync directories.
+    Settings for syncy can be provided in three ways: environment variables,
+    a configuration file, or command line arguments (prioritized as listed).
+    The recommended way is to use a `.syncy.toml` config file for base
+    configurations and then use CLI arguments as overrides.
 
     ```bash
-    syncy
-    syncy <source> [<destination>]
+    syncy --help                    # help menu
+    syncy                           # use config file
+    syncy <source> [<destination>]  # override source and destination directories
+    syncy -b <backend>              # override the backend used for syncing
     ```
 
-    A help menu is available for the command line arguments. Environment
-    variables take the form `SYNCY__<CONFIG>` or `SYNCY__<BACKEND>__<CONFIG>`.
-    They use the same name as the command line arguemtns. Config files are
-    more structured. A template config file exists in the code repository
-    for reference.
+    Configuration files may be specified in three forms: toml, json, env
+    (prioritized as listed). They are searched for in every directory from
+    the current working directory to the root of the file system. All paths
+    are relative to the location of the config file !!!(WIP)!!!. Again, it
+    is recommended to use the `.syncy.toml` format for configurations. A
+    template config file exists in the code repository for reference.
+
+    All configurations available can be specified on the command line as well.
+    A help menu is available to help parse what options exist. Again, it is
+    recommanded to use config files as base configurations and CLI arguments
+    as overrides.
+
+    Environment variables can also be used to specify any configuration options.
+    They take the form: `SYNCY_<CONFIG>` or SYNCY_BACKENDS_<BACKEND>_<CONFIG>`.
+    Since their priority is low, this is only really useful when using syncy
+    without a config file.
 
     Args:
         argv: Configurations specified via command line arguments.
@@ -895,7 +906,7 @@ def syncy(
         envs: Configurations specified via environment variables.
             Defaults to `os.environ`.
         file: Configurations specified via a config file.
-            Defaults to `.syncy.toml`.
+            Defaults to the nearest `.syncy.toml`.
     """
     if argv is None:
         argv = syncy_default_args()
