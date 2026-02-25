@@ -107,8 +107,8 @@ _RsyncDeleteType: TypeAlias = Literal["before", "after", "during", "default"]
 
 SYNCY_SETTINGS_FILE: list[str] = [
     ".syncy.toml",
-    # ".syncy.json",
-    # ".syncy.env",
+    ".syncy.json",
+    ".syncy.env",
 ]
 
 
