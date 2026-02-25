@@ -295,6 +295,8 @@ class _TypeHandler:
 
     @staticmethod
     def type_cast(o: object, t: type[T]) -> T | Undefined:
+        if not isundefined(p := _TypeHandler.type_cast_bool(o, t)):
+            return p
         if not isundefined(p := _TypeHandler.type_cast_union(o, t)):
             return p
         if not isundefined(p := _TypeHandler.type_cast_list(o, t)):
@@ -313,6 +315,22 @@ class _TypeHandler:
             return t(o)
         except TypeError:
             return undefined
+
+    @staticmethod
+    def type_cast_bool(o: object, t: type[bool]) -> T | Undefined:
+        # Extra cases to all env variables to set bool fields.
+        # The hardcoded cases are the following.
+        # * `False` <- "0", "false", "False", "FALSE"
+        # * `True`  <- "1", "true",  "True",  "TRUE"
+        if _TypeHandler.type_check_regular(o, t):
+            return o
+        if not isinstance(o, str):
+            return undefined
+        if o in ("0", "false", "False", "FALSE"):
+            return False
+        if o in ("1", "true", "True", "TRUE"):
+            return True
+        return undefined
 
     @staticmethod
     def type_cast_union(o: object, t: type[UnionType]) -> T | Undefined:
@@ -754,12 +772,12 @@ def syncy_parse_envs(
     prefix: str = "syncy",
 ) -> dict[str, Any]:
     # env vars in the following form:
-    # syncy__<field>
-    # syncy__backend__<backend>__<field>
+    # syncy_<field>
+    # syncy_backend_<backend>_<field>
     envs = {k.lower(): v for k, v in envs.items() if k.lower()}
     envs = {k: v for k, v in envs.items() if k.startswith(f"{prefix}")}
 
-    keyval = [[*k.split("__"), v] for k, v in envs.items()]
+    keyval = [[*k.split("_"), v] for k, v in envs.items()]
 
     res = {}
 
@@ -769,7 +787,7 @@ def syncy_parse_envs(
             d = d.setdefault(k, {})
         d[ks[-2]] = ks[-1]
 
-    return {"syncy": res}
+    return res
 
 
 def syncy_parse_file(file: Path) -> dict[str, Any]:
