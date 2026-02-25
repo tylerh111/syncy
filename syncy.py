@@ -913,6 +913,9 @@ def syncy(
 def entrypoint():
     try:
         syncy()
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     except KeyboardInterrupt:
         pass
 
